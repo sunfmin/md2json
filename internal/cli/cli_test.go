@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -224,6 +225,279 @@ func TestUnknownFlagExitsNonZero(t *testing.T) {
 				t.Errorf("unknown flag should produce non-zero exit, got 0")
 			}
 		})
+	}
+}
+
+// S12 Test 7 (criterion #7): when an error carries a line but no column
+// (`col == 0` while `line > 0`), the canonical stderr line rounds the column
+// up to `1` — never `:0:` for a real line. The `:0:0:` sentinel is reserved
+// for the document-scoped no-position case where BOTH line and column are
+// absent. This is a direct unit test against the rendering helper since the
+// rounding-up rule is a property of the rendering path itself.
+func TestPositionedErrorRoundsUnknownColumnUpToOne(t *testing.T) {
+	cases := []struct {
+		name string
+		line int
+		col  int
+		want string
+	}{
+		{"line-with-col", 5, 3, "md2json2: post.md:5:3: oops\n"},
+		// line known, col unknown → column rounds up to 1.
+		{"line-only-col-zero", 5, 0, "md2json2: post.md:5:1: oops\n"},
+		// document-scoped no-position sentinel: both 0 → 0:0 preserved.
+		{"no-position-sentinel", 0, 0, "md2json2: post.md:0:0: oops\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			writePositionedError(&buf, "post.md", c.line, c.col, "oops")
+			if buf.String() != c.want {
+				t.Errorf("got  %q\nwant %q", buf.String(), c.want)
+			}
+		})
+	}
+}
+
+// failingWriter is an io.Writer that returns an error on every Write. Used to
+// drive emit.Emit into its error branch so the cli's document-scoped error
+// rendering (the `:0:0:` sentinel branch) becomes observable end-to-end.
+type failingWriter struct{}
+
+func (failingWriter) Write(p []byte) (int, error) {
+	return 0, errIO
+}
+
+var errIO = stubError("simulated I/O failure")
+
+type stubError string
+
+func (e stubError) Error() string { return string(e) }
+
+// S12 Test 6 (criterion #6): a document-scoped error (no line/column
+// information available) renders as `md2json2: <path>:0:0: <msg>` on stderr
+// and exits 1. We exercise the path through an io.Writer that fails: emit
+// returns an error, cli's `writeDocScopedError` branch fires, and the stderr
+// line uses the `:0:0:` sentinel with the stdin path token `-`.
+func TestDocumentScopedErrorUsesZeroPositionSentinel(t *testing.T) {
+	var errBuf bytes.Buffer
+	inBuf := strings.NewReader("")
+	exit := Run([]string{"md2json2"}, inBuf, failingWriter{}, &errBuf)
+	if exit != 1 {
+		t.Errorf("exit code: got %d, want 1 (document-scoped error)", exit)
+	}
+	stderr := errBuf.String()
+	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)\n$`)
+	m := canonical.FindStringSubmatch(stderr)
+	if m == nil {
+		t.Fatalf("stderr does not match canonical regex: %q", stderr)
+	}
+	// Stdin source → path token is `-` (CONTEXT.md "Error format").
+	if m[1] != "-" {
+		t.Errorf("stdin-source document-scoped error <path>: got %q, want %q", m[1], "-")
+	}
+	// Document-scoped, no position → `:0:0:` sentinel.
+	if m[2] != "0" || m[3] != "0" {
+		t.Errorf("document-scoped error position: got %s:%s, want 0:0", m[2], m[3])
+	}
+}
+
+// S12 Test 5 (criterion #3): `-V` / `--version` writes a version string to
+// stdout, exit 0. Both forms produce identical output. The exact version
+// string is left to S13's release pipeline; this test only enforces shape
+// (contains `md2json2`, contains a digit, single line modulo trailing \n).
+func TestVersionFlagPrintsVersion(t *testing.T) {
+	for _, flag := range []string{"-V", "--version"} {
+		t.Run(flag, func(t *testing.T) {
+			stdout, stderr, exit := run(t, []string{"md2json2", flag}, "")
+			if exit != 0 {
+				t.Errorf("exit code: got %d, want 0", exit)
+			}
+			if stderr != "" {
+				t.Errorf("stderr should be empty on %s, got %q", flag, stderr)
+			}
+			if !strings.Contains(stdout, "md2json2") {
+				t.Errorf("version output should contain `md2json2`, got %q", stdout)
+			}
+			if !regexp.MustCompile(`\d`).MatchString(stdout) {
+				t.Errorf("version output should contain a digit, got %q", stdout)
+			}
+		})
+	}
+	stdoutShort, _, _ := run(t, []string{"md2json2", "-V"}, "")
+	stdoutLong, _, _ := run(t, []string{"md2json2", "--version"}, "")
+	if stdoutShort != stdoutLong {
+		t.Errorf("-V and --version produced different output:\n-V: %q\n--version: %q", stdoutShort, stdoutLong)
+	}
+}
+
+// S12 Test 4 (criterion #2): `-h` / `--help` writes a usage message to stdout
+// that names every v1 flag and the positional `FILE` / `-` convention. Exit 0,
+// stderr empty. Both forms produce identical output.
+func TestHelpFlagPrintsUsageNamingEveryFlag(t *testing.T) {
+	want := []string{
+		// Every v1 flag name (CONTEXT.md "v1 flags") must appear in the
+		// usage text so users can see the complete contract from -h.
+		"-o", "--output",
+		"--pretty",
+		"--no-position",
+		"--frontmatter-only",
+		"-h", "--help",
+		"-V", "--version",
+		// The positional FILE / stdin sentinel convention (PRD US 1, 2; CLI
+		// contract glossary entry).
+		"FILE",
+	}
+	for _, flag := range []string{"-h", "--help"} {
+		t.Run(flag, func(t *testing.T) {
+			stdout, stderr, exit := run(t, []string{"md2json2", flag}, "")
+			if exit != 0 {
+				t.Errorf("exit code: got %d, want 0", exit)
+			}
+			if stderr != "" {
+				t.Errorf("stderr should be empty on -h/--help, got %q", stderr)
+			}
+			if stdout == "" {
+				t.Fatalf("stdout should not be empty on %s", flag)
+			}
+			for _, frag := range want {
+				if !strings.Contains(stdout, frag) {
+					t.Errorf("usage missing %q\nfull stdout:\n%s", frag, stdout)
+				}
+			}
+			// Mention of the `-` stdin sentinel: the CONTEXT.md "CLI
+			// contract" entry pins `FILE=-` as the stdin sentinel. The
+			// usage text must surface that convention somewhere (so the
+			// `-` literal appears).
+			if !strings.Contains(stdout, "-") {
+				t.Errorf("usage missing the stdin `-` sentinel mention\nfull stdout:\n%s", stdout)
+			}
+		})
+	}
+	// Both forms must agree byte-for-byte (one source of truth).
+	stdoutShort, _, _ := run(t, []string{"md2json2", "-h"}, "")
+	stdoutLong, _, _ := run(t, []string{"md2json2", "--help"}, "")
+	if stdoutShort != stdoutLong {
+		t.Errorf("-h and --help produced different output:\n-h: %q\n--help: %q", stdoutShort, stdoutLong)
+	}
+}
+
+// S12 Test 3 (criterion #1): `-o out.json post.md` writes the JSON envelope
+// to `out.json` (creating/truncating as needed), nothing on stdout, exit 0.
+// Both the short `-o` and the long `--output` forms must work, and the
+// `--output=PATH` equals form must work too. (Existing TestKnownFlagsRecognizedAsNoop
+// covered "exit 0"; here we additionally pin the contract that the file
+// receives the envelope and stdout stays clean.)
+func TestOutputFlagWritesEnvelopeToFile(t *testing.T) {
+	tmp := t.TempDir()
+	cases := []struct {
+		name string
+		mk   func(outPath string) []string
+	}{
+		{"short", func(p string) []string { return []string{"md2json2", "--no-position", "-o", p} }},
+		{"long", func(p string) []string { return []string{"md2json2", "--no-position", "--output", p} }},
+		{"long-equals", func(p string) []string { return []string{"md2json2", "--no-position", "--output=" + p} }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			outPath := tmp + "/out-" + c.name + ".json"
+			stdout, stderr, exit := run(t, c.mk(outPath), "")
+			if exit != 0 {
+				t.Errorf("exit code: got %d, want 0; stderr=%q", exit, stderr)
+			}
+			if stdout != "" {
+				t.Errorf("stdout should be empty when -o is set, got %q", stdout)
+			}
+			if stderr != "" {
+				t.Errorf("stderr should be empty on success, got %q", stderr)
+			}
+			got, err := os.ReadFile(outPath)
+			if err != nil {
+				t.Fatalf("read output file: %v", err)
+			}
+			if string(got) != wantEnvelopeNoPosition {
+				t.Errorf("output file contents mismatch\n  got:  %q\n  want: %q", got, wantEnvelopeNoPosition)
+			}
+		})
+	}
+}
+
+// S12 Test 3b (criterion #1, truncate half): `-o` on an existing file
+// truncates first; the file does not accumulate prior contents.
+func TestOutputFlagTruncatesExistingFile(t *testing.T) {
+	tmp := t.TempDir()
+	outPath := tmp + "/already.json"
+	if err := os.WriteFile(outPath, []byte("STALE BYTES THAT MUST BE REMOVED"), 0o644); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	_, _, exit := run(t, []string{"md2json2", "--no-position", "-o", outPath}, "")
+	if exit != 0 {
+		t.Errorf("exit code: got %d, want 0", exit)
+	}
+	got, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("read output file: %v", err)
+	}
+	if string(got) != wantEnvelopeNoPosition {
+		t.Errorf("output file should be truncated then rewritten\n  got:  %q\n  want: %q", got, wantEnvelopeNoPosition)
+	}
+}
+
+// S12 Test 2 (criterion #5 + criterion #9 pre-input half): a missing /
+// unreadable FILE (error raised before any bytes are read) is a pre-input
+// usage error: `<path>` is the literal `md2json2`, position is `:0:0:`, exit
+// code is 2, stdout is empty.
+func TestMissingFilePreInputUsageError(t *testing.T) {
+	tmp := t.TempDir()
+	path := tmp + "/nope.md"
+	stdout, stderr, exit := run(t, []string{"md2json2", path}, "")
+	if stdout != "" {
+		t.Errorf("stdout should be empty on usage error, got %q", stdout)
+	}
+	if exit != 2 {
+		t.Errorf("exit code: got %d, want 2", exit)
+	}
+	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)\n$`)
+	m := canonical.FindStringSubmatch(stderr)
+	if m == nil {
+		t.Fatalf("stderr does not match canonical regex: %q", stderr)
+	}
+	if m[1] != "md2json2" {
+		t.Errorf("pre-input usage error <path> token: got %q, want %q", m[1], "md2json2")
+	}
+	if m[2] != "0" || m[3] != "0" {
+		t.Errorf("pre-input usage error position: got %s:%s, want 0:0", m[2], m[3])
+	}
+}
+
+// S12 Test 1 (criterion #4 + criterion #9 pre-input half): an unknown flag is a
+// pre-input usage error. The stderr line uses the literal program name
+// `md2json2` as the `<path>` token and the `:0:0:` sentinel; exit code is 2
+// (usage error, distinct from 1 = document-scoped parse error). Stdout stays
+// empty so callers branching on `$?` don't see a stray byte.
+func TestUnknownFlagPreInputUsageError(t *testing.T) {
+	stdout, stderr, exit := run(t, []string{"md2json2", "--no-such-flag"}, "")
+	if stdout != "" {
+		t.Errorf("stdout should be empty on usage error, got %q", stdout)
+	}
+	if exit != 2 {
+		t.Errorf("exit code: got %d, want 2", exit)
+	}
+	// Stderr must be exactly one line matching the canonical regex with
+	// `<path>` = `md2json2` and position `0:0`.
+	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)\n$`)
+	m := canonical.FindStringSubmatch(stderr)
+	if m == nil {
+		t.Fatalf("stderr does not match canonical regex: %q", stderr)
+	}
+	if m[1] != "md2json2" {
+		t.Errorf("pre-input usage error <path> token: got %q, want %q", m[1], "md2json2")
+	}
+	if m[2] != "0" || m[3] != "0" {
+		t.Errorf("pre-input usage error position: got %s:%s, want 0:0", m[2], m[3])
+	}
+	if !strings.Contains(strings.ToLower(m[4]), "no-such-flag") &&
+		!strings.Contains(strings.ToLower(m[4]), "unknown") {
+		t.Errorf("stderr message should mention the bad flag or be an 'unknown flag' diagnostic, got %q", m[4])
 	}
 }
 

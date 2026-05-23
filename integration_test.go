@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -198,6 +199,176 @@ func TestHarnessDetectsSingleByteStdoutDiff(t *testing.T) {
 	diffs := compareFixture(fx, got, nil, 0)
 	if len(diffs) == 0 {
 		t.Errorf("compareFixture failed to detect a one-byte stdout difference; harness is not byte-exact")
+	}
+}
+
+// TestStdinSourceFixtureUsesDashPathToken (S12 criterion #9, stdin half):
+// at least one fixture in the suite is a stdin-source error fixture (read
+// from stdin, hard-error) whose canonical stderr line uses the literal `-`
+// as the <path> token (CONTEXT.md "Error format" — round-trips with the
+// CLI's stdin sentinel). Asserts existence + correctness; if every stdin-
+// source error fixture loses the `-` path token, this test fails.
+func TestStdinSourceFixtureUsesDashPathToken(t *testing.T) {
+	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)$`)
+	root := filepath.Join("testdata", "fixtures")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read fixtures root %s: %v", root, err)
+	}
+	stdinDashFixtures := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, e.Name())
+		// A stdin-source error fixture: args contains NO positional (only
+		// flags), stderr is non-empty, exit != 0.
+		argsBytes, err := os.ReadFile(filepath.Join(dir, "args"))
+		if err != nil {
+			continue
+		}
+		args := strings.Fields(strings.TrimSpace(string(argsBytes)))
+		hasPositional := false
+		for _, a := range args {
+			if a == "-" || (len(a) > 0 && a[0] != '-') {
+				hasPositional = true
+				break
+			}
+		}
+		if hasPositional {
+			continue
+		}
+		stderrBytes, err := os.ReadFile(filepath.Join(dir, "stderr"))
+		if err != nil || len(stderrBytes) == 0 {
+			continue
+		}
+		exitBytes, err := os.ReadFile(filepath.Join(dir, "exit"))
+		if err != nil {
+			continue
+		}
+		exitCode, _ := strconv.Atoi(strings.TrimSpace(string(exitBytes)))
+		// Only exit 1 (document-scoped / read error) means stdin actually
+		// became the source. Exit 2 fixtures are pre-input usage errors —
+		// their <path> token is `md2json2`, not `-`, even though no
+		// positional is present.
+		if exitCode != 1 {
+			continue
+		}
+		// Found a stdin-source error fixture: every line's <path> must be `-`.
+		text := strings.TrimRight(string(stderrBytes), "\n")
+		for _, line := range strings.Split(text, "\n") {
+			m := canonical.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			if m[1] != "-" {
+				t.Errorf("fixture %s is a stdin-source error fixture but <path> token is %q, want %q",
+					e.Name(), m[1], "-")
+			}
+		}
+		stdinDashFixtures++
+	}
+	if stdinDashFixtures == 0 {
+		t.Fatalf("no stdin-source error fixture found in suite; criterion #9 (stdin half) is not testable")
+	}
+}
+
+// TestPreInputUsageErrorFixtureUsesMd2json2PathToken (S12 criterion #9,
+// pre-input half): at least one fixture in the suite is a pre-input usage-
+// error fixture (unknown flag, missing FILE before any bytes read) whose
+// canonical stderr line uses the literal `md2json2` as the <path> token
+// (PRD user story 20). Exit code is 2. Asserts existence + correctness.
+func TestPreInputUsageErrorFixtureUsesMd2json2PathToken(t *testing.T) {
+	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)$`)
+	root := filepath.Join("testdata", "fixtures")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read fixtures root %s: %v", root, err)
+	}
+	preInputFixtures := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, e.Name())
+		exitBytes, err := os.ReadFile(filepath.Join(dir, "exit"))
+		if err != nil {
+			continue
+		}
+		exitCode, _ := strconv.Atoi(strings.TrimSpace(string(exitBytes)))
+		if exitCode != 2 {
+			continue
+		}
+		stderrBytes, err := os.ReadFile(filepath.Join(dir, "stderr"))
+		if err != nil || len(stderrBytes) == 0 {
+			continue
+		}
+		text := strings.TrimRight(string(stderrBytes), "\n")
+		for _, line := range strings.Split(text, "\n") {
+			m := canonical.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			if m[1] != "md2json2" {
+				t.Errorf("fixture %s is a pre-input usage-error fixture (exit 2) but <path> token is %q, want %q",
+					e.Name(), m[1], "md2json2")
+			}
+			if m[2] != "0" || m[3] != "0" {
+				t.Errorf("fixture %s pre-input usage-error position: got %s:%s, want 0:0",
+					e.Name(), m[2], m[3])
+			}
+		}
+		preInputFixtures++
+	}
+	if preInputFixtures == 0 {
+		t.Fatalf("no pre-input usage-error fixture (exit 2) found in suite; criterion #9 (pre-input half) is not testable")
+	}
+}
+
+// TestCanonicalStderrRegexMatchesEveryFixture (S12 criterion #8): every
+// emitted stderr line across the fixture suite must match the single canonical
+// regex `^md2json2: ([^:]+):(\d+):(\d+): (.+)$` (CONTEXT.md "Error format").
+// This is the property check that pins the "one regex covers every diagnostic"
+// contract; a future fixture whose `stderr` file drifts from the format fails
+// here before it can hide in TestFixtures.
+//
+// Empty `stderr` files (success fixtures) are skipped — the regex is for
+// non-empty stderr only. A fixture whose stderr has multiple lines fails the
+// test if ANY line drifts from the canonical shape.
+func TestCanonicalStderrRegexMatchesEveryFixture(t *testing.T) {
+	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)$`)
+	root := filepath.Join("testdata", "fixtures")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("read fixtures root %s: %v", root, err)
+	}
+	totalLinesScanned := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, e.Name(), "stderr")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			t.Fatalf("fixture %s: read stderr: %v", e.Name(), err)
+		}
+		text := strings.TrimRight(string(raw), "\n")
+		if text == "" {
+			continue
+		}
+		for _, line := range strings.Split(text, "\n") {
+			totalLinesScanned++
+			if !canonical.MatchString(line) {
+				t.Errorf("fixture %s: stderr line does not match canonical regex %q: %q",
+					e.Name(), canonical.String(), line)
+			}
+		}
+	}
+	if totalLinesScanned == 0 {
+		t.Fatalf("no stderr lines were scanned across the fixture suite; the test is vacuous")
 	}
 }
 

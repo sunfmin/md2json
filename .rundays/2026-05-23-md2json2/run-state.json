@@ -18,7 +18,7 @@
     "max_issues": 50,
     "current_issue": "11-cli-flags-error-format-exit-codes"
   },
-  "last_verdict": null,
+  "last_verdict": "accept",
   "rate_limit": {
     "consecutive_limited_wakes": 0,
     "last_hit_at": null

@@ -17,6 +17,43 @@ import (
 	"github.com/sunfmin/md2json2/internal/translate"
 )
 
+// usageText is the canonical -h / --help message. It names every v1 flag
+// (CONTEXT.md "v1 flags") and the positional FILE / `-` stdin sentinel
+// convention (CONTEXT.md "CLI contract"). Sent to stdout because usage output
+// is normal program output for `-h` (exit 0), not diagnostic.
+const usageText = `Usage: md2json2 [FLAGS] [FILE]
+
+Convert a single Markdown document (GFM + YAML frontmatter) to a JSON
+envelope on stdout. Reads from FILE if given, otherwise from stdin; the
+literal FILE=- is the explicit stdin sentinel.
+
+Flags:
+  -o, --output <FILE>    Write the JSON envelope to FILE instead of stdout.
+      --pretty           Emit 2-space-indented JSON (default: compact).
+      --no-position      Drop the position field from every node.
+      --frontmatter-only Emit just the frontmatter value (or null); skip body parse.
+  -h, --help             Show this help and exit.
+  -V, --version          Show version and exit.
+
+Exit codes:
+  0  success
+  1  parse / document-scoped error
+  2  usage error (bad flag, missing or unreadable FILE)
+`
+
+// versionText is the canonical -V / --version output. The version string
+// itself is a static placeholder for v1; the release pipeline (S13) will
+// stamp the real semver at build time.
+const versionText = "md2json2 v1.0.0\n"
+
+// preInputPathToken is the `<path>` token used in the canonical stderr line
+// for any usage error raised BEFORE an input source has been determined —
+// unknown flag, missing flag value, unreadable `FILE` before any bytes are
+// read. Per CONTEXT.md "Error format" + PRD user story 20: the literal
+// program name `md2json2` is the sentinel for "no source was ever in play."
+// Distinct from `-` (stdin was the chosen source) and a real file path.
+const preInputPathToken = "md2json2"
+
 // Run is the cli module's single entry point. It takes argv (argv[0] is the
 // program name, per Unix convention), an input reader (the injected stdin),
 // an output writer (the injected stdout), and an error writer (the injected
@@ -36,12 +73,11 @@ type options struct {
 }
 
 // parseArgs walks args (argv minus argv[0]) and returns the populated options
-// plus an "ok" flag. The PRD's contract is "known flags recognized, unknown
-// flags rejected." S01 does not need to render a polished error message
-// (later slices pin exit code 2 + the canonical stderr regex); we only need
-// the unknown-flag branch to return a non-ok signal so Run can exit non-zero.
-func parseArgs(args []string) (opts options, ok bool) {
-	ok = true
+// plus, on failure, a usage-error message. The error message becomes the
+// `(.+)` tail of the canonical stderr line; the caller renders the
+// `md2json2: md2json2:0:0: <msg>\n` envelope and exits 2 (S12 criterion #4).
+// Returning `usageErr=""` signals success.
+func parseArgs(args []string) (opts options, usageErr string) {
 	i := 0
 	for i < len(args) {
 		a := args[i]
@@ -53,7 +89,7 @@ func parseArgs(args []string) (opts options, ok bool) {
 				opts.hasPositional = true
 				opts.filePath = args[i]
 			}
-			return opts, ok
+			return opts, ""
 		case a == "-h" || a == "--help":
 			opts.help = true
 			i++
@@ -72,7 +108,7 @@ func parseArgs(args []string) (opts options, ok bool) {
 		case a == "-o" || a == "--output":
 			// Value in the next argv element.
 			if i+1 >= len(args) {
-				return opts, false
+				return opts, fmt.Sprintf("flag %s requires a value", a)
 			}
 			opts.output = args[i+1]
 			i += 2
@@ -89,7 +125,7 @@ func parseArgs(args []string) (opts options, ok bool) {
 			i++
 		case len(a) > 0 && a[0] == '-':
 			// Unknown flag.
-			return opts, false
+			return opts, fmt.Sprintf("unknown flag %s", a)
 		default:
 			// Positional FILE. S01 accepts only one; if more are given, the
 			// last one wins. Multi-file is explicitly out of scope per PRD.
@@ -98,7 +134,7 @@ func parseArgs(args []string) (opts options, ok bool) {
 			i++
 		}
 	}
-	return opts, ok
+	return opts, ""
 }
 
 func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -109,19 +145,25 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		args = argv[1:]
 	}
 
-	opts, ok := parseArgs(args)
-	if !ok {
-		return 1
+	opts, usageErr := parseArgs(args)
+	if usageErr != "" {
+		// Pre-input usage error per CONTEXT.md "Error format" + PRD §
+		// "Error-format / exit-code mapping": no input source has been
+		// determined, so `<path>` is the literal program name `md2json2`
+		// and the position is the `:0:0:` sentinel. Exit code 2 (usage
+		// error, distinct from 1 = parse/document-scoped error).
+		writePositionedError(stderr, preInputPathToken, 0, 0, usageErr)
+		return 2
 	}
 
-	// -h and -V short-circuit successfully. S01 emits placeholder text on
-	// stdout; later slices (S11) pin the exact bytes.
+	// -h / -V short-circuit successfully on stdout (CLI contract: usage and
+	// version are normal program output, not diagnostic; exit 0).
 	if opts.help {
-		_, _ = io.WriteString(stdout, "md2json2: help (placeholder)\n")
+		_, _ = io.WriteString(stdout, usageText)
 		return 0
 	}
 	if opts.version {
-		_, _ = io.WriteString(stdout, "md2json2: version (placeholder)\n")
+		_, _ = io.WriteString(stdout, versionText)
 		return 0
 	}
 
@@ -135,11 +177,32 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if opts.hasPositional && opts.filePath != "" && opts.filePath != "-" {
 		f, err := os.Open(opts.filePath)
 		if err != nil {
-			return 1
+			// Pre-input usage error: the file could not be opened, so no
+			// bytes have been read and `<path>` is `md2json2` (PRD user
+			// story 20 + error-format/exit-code mapping table). Exit 2.
+			writePositionedError(stderr, preInputPathToken, 0, 0, err.Error())
+			return 2
 		}
 		defer f.Close()
 		src = f
 		pathToken = opts.filePath
+	}
+
+	// Resolve the output sink. `-o/--output <FILE>` (opts.output non-empty)
+	// writes the envelope to that file (creating or truncating) instead of
+	// stdout (S12 criterion #1). A failure to open the output file is treated
+	// as a pre-input usage error per the error-format/exit-code mapping —
+	// no bytes were ever read from input, so `<path>` stays `md2json2` and
+	// the exit code is 2.
+	out := stdout
+	if opts.output != "" {
+		f, err := os.Create(opts.output)
+		if err != nil {
+			writePositionedError(stderr, preInputPathToken, 0, 0, err.Error())
+			return 2
+		}
+		defer f.Close()
+		out = f
 	}
 
 	// Read + normalize the input. On a typed read-stage error, route it through
@@ -179,7 +242,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// short-circuits) translate, then emit."
 	if opts.frontmatterOnly {
 		eopts := emit.Options{NoPosition: opts.noPosition, FrontmatterOnly: true, Pretty: opts.pretty}
-		if err := emit.Emit(stdout, pr.Frontmatter, nil, eopts); err != nil {
+		if err := emit.Emit(out, pr.Frontmatter, nil, eopts); err != nil {
 			writeDocScopedError(stderr, pathToken, err)
 			return 1
 		}
@@ -189,7 +252,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// Translate goldmark → mdast-shaped Go value tree, then emit.
 	root := translate.Translate(pr.Doc, srcBytes, translate.Options{})
 	eopts := emit.Options{NoPosition: opts.noPosition, Pretty: opts.pretty}
-	if err := emit.Emit(stdout, pr.Frontmatter, root, eopts); err != nil {
+	if err := emit.Emit(out, pr.Frontmatter, root, eopts); err != nil {
 		writeDocScopedError(stderr, pathToken, err)
 		return 1
 	}
@@ -208,6 +271,15 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 // another typed error from parse / emit / translate with real line/col info
 // should plug an `errors.As` branch into Run that calls this helper.
 func writePositionedError(stderr io.Writer, pathToken string, line, col int, msg string) {
+	// Column-rounding rule (CONTEXT.md "Error format"; S12 criterion #7):
+	// when an error carries a line but no column (col == 0 while line > 0),
+	// the column rounds UP to 1 — never `:0:` for a real line, because
+	// lines/columns are 1-indexed elsewhere. The `:0:0:` sentinel is
+	// reserved for the document-scoped no-position case where BOTH line and
+	// column are absent.
+	if line > 0 && col < 1 {
+		col = 1
+	}
 	fmt.Fprintf(stderr, "md2json2: %s:%d:%d: %s\n", pathToken, line, col, msg)
 }
 
