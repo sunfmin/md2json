@@ -17,3 +17,5 @@
 {"t":"2026-05-23T14:41:44Z","ev":"agent-return","role":"proposer-prd","stage":"critique-prd","verdict":"continue","note":"proposer-revision-round"}
 {"t":"2026-05-23T14:41:52Z","ev":"cycle-commit","result":"committed","sha":"85323fb","stage":"critique-prd","verdict":"continue"}
 {"t":"2026-05-23T14:44:40Z","ev":"agent-return","role":"critic","stage":"critique-prd","verdict":"continue"}
+{"t":"2026-05-23T14:44:43Z","ev":"cycle-commit","result":"committed","sha":"cfb6c25","stage":"critique-prd","verdict":"continue"}
+{"t":"2026-05-23T14:57:29Z","ev":"agent-return","role":"proposer-prd","stage":"critique-prd","verdict":"trigger-grill","note":"library-probe-found-mismatch"}
