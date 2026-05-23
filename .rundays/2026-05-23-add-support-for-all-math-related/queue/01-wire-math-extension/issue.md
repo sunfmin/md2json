@@ -10,4 +10,4 @@ A user piping a non-math GFM document through md2json gets the same JSON envelop
 - [ ] The parser registers the math extension as part of its standard extension set; no new flag, no opt-in, no environment variable.
 - [ ] The full pre-existing test suite (prose, GFM tables, lists, blockquotes, footnotes, frontmatter, code blocks, raw HTML, `--no-position`, `--frontmatter-only`, `--pretty`, exit codes, error format) passes unchanged with the extension loaded.
 - [ ] A smoke fixture confirms a non-math GFM blog post (heading + paragraphs + list + fenced code + frontmatter) emits a byte-identical JSON envelope before and after this issue.
-- [ ] The resulting binary is still a single static Go executable; no new non-Go runtime is introduced.
+- [ ] `go mod tidy` resolves without introducing any new `cgo`-requiring dependency (verifiable by `grep -l cgo $(go list -deps -f '{{.Dir}}' ./...)` returning no new hits beyond the pre-Run baseline).

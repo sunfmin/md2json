@@ -45,3 +45,5 @@
 {"t":"2026-05-23T15:36:07Z","ev":"agent-return","role":"proposer-issues","stage":"to-issues","verdict":"accept","queue_total":"7"}
 {"t":"2026-05-23T15:36:11Z","ev":"cycle-commit","result":"committed","sha":"041354f","stage":"to-issues","verdict":"accept"}
 {"t":"2026-05-23T15:38:27Z","ev":"agent-return","role":"critic","stage":"critique-issues","verdict":"continue"}
+{"t":"2026-05-23T15:38:30Z","ev":"cycle-commit","result":"committed","sha":"f22c028","stage":"critique-issues","verdict":"continue"}
+{"t":"2026-05-23T15:40:36Z","ev":"agent-return","role":"proposer-issues","stage":"critique-issues","verdict":"continue","note":"round-1-revision"}
