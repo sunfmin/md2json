@@ -3,10 +3,10 @@
   "idea_path": "/Users/sunfmin/Developments/md2json/.rundays/2026-05-23-add-support-for-all-math-related/IDEA.md",
   "product_dir": "/Users/sunfmin/Developments/md2json",
   "started_at": "2026-05-23T14:17:58Z",
-  "current_stage": "grill-0",
+  "current_stage": "to-prd",
   "stage_context": {
-    "round": 4,
-    "transcript_path": "/Users/sunfmin/Developments/md2json/.rundays/2026-05-23-add-support-for-all-math-related/grill-0/grill-transcript.md",
+    "round": 0,
+    "transcript_path": null,
     "redo_count": 0
   },
   "queue": {
