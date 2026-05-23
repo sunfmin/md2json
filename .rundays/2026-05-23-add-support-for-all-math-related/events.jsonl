@@ -86,3 +86,6 @@
 {"t":"2026-05-23T17:04:12Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","issue":"07-mismatched-braces-and-value-preservation","verdict":"accept","note":"survey-only-deferred-to-final-arch"}
 {"t":"2026-05-23T17:04:20Z","ev":"cycle-commit","result":"committed","sha":"c6738cf","stage":"mini-arch","verdict":"accept"}
 {"t":"2026-05-23T17:15:00Z","ev":"agent-return","role":"proposer-arch","stage":"final-arch","verdict":"accept","note":"compensate_math.go-split-261LoC-moved"}
+{"t":"2026-05-23T17:15:03Z","ev":"cycle-commit","result":"committed","sha":"a591f3d","stage":"final-arch","verdict":"accept"}
+{"t":"2026-05-23T17:17:33Z","ev":"agent-return","role":"po","stage":"acceptance","verdict":"done"}
+{"t":"2026-05-23T17:17:37Z","ev":"cycle-halt","reason":"Acceptance Gate emitted done"}
