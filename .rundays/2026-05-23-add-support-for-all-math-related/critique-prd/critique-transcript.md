@@ -19,3 +19,21 @@ Target: `/Users/sunfmin/Developments/md2json/.rundays/2026-05-23-add-support-for
 6. **Stray `VERDICT: accept` in PRD body** (line 119). PRDs do not carry VERDICTs — VERDICTs belong to grill / critique transcripts. Proposer leaked a transcript-style closer into the artifact. Cosmetic but indicates Stage-output conflation.
 
 ### VERDICT: continue
+
+### Proposer-PRD
+
+Revision applied. Six defects addressed.
+
+1. **ADR-0004 phantom — resolved by writing the ADR.** Authored `/Users/sunfmin/Developments/md2json/docs/adr/0004-math-extension-library.md` as the sibling output grill-0 Round 3 said `to-prd` Stage owes. The ADR carries: library pick (`github.com/litao91/goldmark-mathjax`), wiring style (appended to `parse.New`'s extension list per ADR-0002 §"no central registry, by convention"), goldmark-side `ast.InlineMath`/`ast.Math` names (kept out of CONTEXT.md per PO direction), translate-layer unclosed-`$$` compensation, no-runtime-toggle posture, and explicit supersede of ADR-0002's `Math ($...$, $$...$$) extensions. PRD non-goal.` bullet. PRD's seven references to ADR-0004 now point at a real file.
+
+2. **Fixture #8 (mismatched braces) — sharpened to an exact tree.** Was "either emits `inlineMath` whose `value` carries the broken LaTeX or falls through to `text`." Now: `root.children = [paragraph.children = [inlineMath{value: "\\frac{a}{b"}]]`. Derivation pinned in fixture body: opening `$` is followed by `\` (non-whitespace, non-`$`) so the remark-math rule opens; closing `$` is preceded by `b` (non-whitespace) and followed by nothing (no digit) so the rule closes; the unbalanced `{` rides through inside `value` per **Text/Code value preservation**. No disjunctive acceptance remains.
+
+3. **Fixture #11 + Impl Decision §"In-block composition" (table cell) — sharpened to an exact tree.** Was "produces `text` (and possibly `inlineMath` from the inline matcher depending on the exact span)." Now: fixture asserts the `tableCell` contains exactly `[text{value: "$$x$$"}]`, with zero `math` and zero `inlineMath` nodes anywhere under the table. Impl Decision body now pins the derivation: GFM tables are inline-only so the block parser does not fire, and the library's inline matcher distinguishes `$$` from inline `$...$` (yields when the character after the opening `$` is another `$`), so both decline and the bytes fall through to `text`. "Possibly" / "depending on cell contents" removed.
+
+4. **Fixture #14 (library contract test) — split into a pinned-tree wire fixture (#5) and a library-behavior unit test (#14).** Fixture #5 is now the wire-contract assertion: input `$$\n\frac{a}{b}\n` produces `root.children = [paragraph.children = [text{value: "$$\n\\frac{a}{b}\n"}]]` (post-translate-compensation). Fixture #14 is now a focused library-behavior unit test asserting that `litao91/goldmark-mathjax` emits a partial `ast.Math` on the same input — this is the upstream assumption ADR-0004 Decision 5 and `translate`'s compensation rest on. The two are no longer tangled: fixture #5 holds the wire contract, fixture #14 holds the library assumption, and a future library-behavior change makes the unit test fail (explicit ADR-0004 reopen) rather than silently breaking the wire fixture.
+
+5. **Vocab drift — "single-source-of-truth registry function" removed.** PRD now uses ADR-0002's verbatim phrasing: "**`parse.New` is the single function by convention, with no central registry**, per ADR-0002 §'Negative (no central registry)'." Both Impl Decisions §"Extension library pick" and the §"Module touch-set" `parse` bullet now speak in terms of "appended to `parse.New`'s extension list" rather than invented "registry function" vocabulary.
+
+6. **Stray `VERDICT: accept` in PRD body — removed.** PRD no longer carries a VERDICT line in its artifact body.
+
+### VERDICT: accept

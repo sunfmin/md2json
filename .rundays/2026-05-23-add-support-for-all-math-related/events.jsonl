@@ -13,3 +13,5 @@
 {"t":"2026-05-23T14:33:44Z","ev":"agent-return","role":"proposer-prd","stage":"to-prd","verdict":"accept"}
 {"t":"2026-05-23T14:33:47Z","ev":"cycle-commit","result":"committed","sha":"f03ac69","stage":"to-prd","verdict":"accept"}
 {"t":"2026-05-23T14:36:26Z","ev":"agent-return","role":"critic","stage":"critique-prd","verdict":"continue"}
+{"t":"2026-05-23T14:36:29Z","ev":"cycle-commit","result":"committed","sha":"e021bdc","stage":"critique-prd","verdict":"continue"}
+{"t":"2026-05-23T14:41:44Z","ev":"agent-return","role":"proposer-prd","stage":"critique-prd","verdict":"continue","note":"proposer-revision-round"}
