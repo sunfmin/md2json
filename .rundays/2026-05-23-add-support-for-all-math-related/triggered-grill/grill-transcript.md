@@ -57,6 +57,45 @@ Skip if not (b). The existing `remark-math currency rule` entry in CONTEXT.md ha
 Round 1 cap: three questions, the third gated on (b). Answer Q1 minimally; Q2/Q3 only if your Q1 pick lights them up. If you pick (c), Round 2 closes — the PRD's existing fixture #3 derivation and the `$5 and $x$` divergence fixture both already exist in §Open Questions, so vocab + ADR-0004 reopen are mechanical.
 
 ### PO
-<left empty — next Cycle's PO fills>
+
+**A1 (Q1). Pick: (c) translate-layer currency post-pass — demote-only.** Library stands (no ADR-0004 reopen on the library identity), CONTEXT.md `remark-math currency rule` entry gets a softening edit (not a rewrite), `translate` carries a ~30-LoC post-pass that re-applies the three remark-math predicate checks against each `*ast.InlineMath` and demotes the matched range to `text` on rejection.
+
+Rationale.
+
+1. **User-corpus realism trumps spec purity.** I write Markdown that contains currency amounts in prose ("It costs $5 and they had $10" is a representative line). (b) silently regresses every such document — `inlineMath{value:"5 and they had "}` lands in the wire, downstream renderers either typeset garbage or report a LaTeX error on the broken span. That is a real-world corpus-level regression on the `v1 ship criterion` input class (GFM blog posts), the exact failure mode grill-0 A5 rejected (c)-strict-opt-in for. Accepting it now reverses A5 silently. Reject (b).
+
+2. **(a) burns a Cycle on a sub-decision IDEA does not motivate.** Forking the inline parser is technically clean (byte-identical remark-math) but reopens ADR-0004 and triggers another grill on fork-target (vendor `inline.go` only vs vendor whole package minus renderers vs hand-roll fresh against `goldmark/parser.InlineParser`). The library's own test surface (`mathjax_test.go`) is five cases — `plain text`, `bold`, `$1+2$` inline, `$$\n1+2\n$$` display, one panic-regression — none of which exercise currency. The library never claimed to implement remark-math; Round-2 Interviewer's "implements the remark-math currency guard verbatim" claim was the assertion error, not a library defect. Forking would mean carrying ~50 LoC of ongoing-drift-vs-upstream vendored Go for a rule the upstream library was never trying to satisfy. Bounded delegation (grill-0 A4) said "library, not hand-rolled"; (a) is hand-rolling-via-fork dressed up. Reject (a) for this Run.
+
+3. **(c) is the most contained remediation.** ~30 LoC inside `translate` (the AST→mdast layer that *already* owns library-behavior compensation per ADR-0004 Decision 5's unclosed-`$$` predicate — see PRD §Implementation Decisions `translate` bullet, sub-point 1). The currency post-pass is sub-point 2 in the exact same compensation pattern: `translate` re-applies the three predicates (whitespace-after-opener, whitespace-before-closer, no-digit-after-closer) against src bytes for each `*ast.InlineMath` and demotes on rejection. Demoted ranges coalesce with adjacent `text` siblings via existing `translate.go:225-231` logic — no new contiguous-text coalescing code. No fork. No ADR-0004 reopen on library identity. No CONTEXT.md rewrite of `remark-math currency rule` — only a softening clause naming the known divergence.
+
+4. **Honest about the (c) cost — `$5 and $x$` divergence is real and fixture-pinned.** The library greedy-matches the first `$...$` it finds (`inline.go:38-52` walks forward to the first closer satisfying the `closure == opener && next != '$'` branch). On input `$5 and $x$`, the library produces one `inlineMath{value:"5 and "}` spanning bytes 0–9, then `text{value:"x"}` then a stray `$`. remark-math, by contrast, rejects the opening `$` (whitespace after = `5` is not a digit-check trigger, but the closing-`$`-followed-by-` ` against ` ` test — wait, re-checking: remark-math's rule is "opening `$` followed by non-whitespace AND closing `$` preceded by non-whitespace AND closing `$` not followed by a digit." Opening `$` followed by `5` (non-whitespace, passes). Closing `$` (at pos 9 in `$5 and `... wait the next `$` after `$5` is at pos 8 in `$5 and $x$` — followed by `x`, preceded by ` ` (space) → **fails** the closing-preceded-by-non-whitespace check). So remark-math rejects the first match, scans onward, finds `$x$` as a valid match → `[text{value:"$5 and "}, inlineMath{value:"x"}]`. Option (c) cannot re-scan the demoted bytes (the library has already greedy-consumed through them); demoting the rejected match converts the whole span back to `text` → `[text{value:"$5 and $x$"}]`. The valid `$x$` is lost. That is a real regression vs remark-math on the specific mixed-prose-plus-math pattern.
+
+   I accept this cost. The divergence is (i) narrow — requires currency-rejected match's span to physically contain a valid later inline-math span; (ii) bounded — the rejected-then-demoted bytes are *not silently dropped*, they survive byte-for-byte in `text.value` per `Text/Code value preservation`, so the downstream consumer still sees `$x$` as literal source; (iii) explicit — a fixture pinning this divergence (PRD adds a fixture asserting `[text{value:"$5 and $x$"}]` on this exact input) makes the loss observable, regression-proof, and documentable. Compared to (b)'s silent corpus-wide currency regression, (c)'s narrow-and-pinned divergence is the better tradeoff.
+
+**A2 (Q2). Skip.** Not (a).
+
+**A3 (Q3). Skip.** Not (b).
+
+---
+
+**CONTEXT.md edit required as part of `to-prd` re-run** (PO authorizes; PRD-stage author applies — same Stage that owns ADR-0004 authoring per grill-0 Round 3).
+
+Current `remark-math currency rule` entry ends: "The chosen goldmark math extension must implement this rule; if it does not, that is an extension-pick blocker, not a rule reopen."
+
+That guard is empirically falsified (litao91 does not implement the rule and we are not switching libraries). Replace with:
+
+> "The chosen goldmark math extension may not implement this rule end-to-end; when it does not, the `translate` layer applies the three predicate checks as a demote-only post-pass against each emitted `inlineMath`, converting rejected ranges back to `text`. This restores user-story-3 fidelity (`$5 and $10` → ordinary prose) at the cost of a narrow divergence from remark-math on inputs where a currency-rejected match's span physically contains a later valid inline-math match (e.g., `$5 and $x$` produces a single `text` node rather than `[text, inlineMath, text]`); divergence is fixture-pinned, see PRD `to-prd` output."
+
+**PO decision**: keeps the rule's wire-output semantics (the three predicates still decide what is and is not an `inlineMath` on the wire) while honestly naming the implementation route (translate post-pass, not library-internal) and the one known divergence. Does *not* rewrite the rule's three predicate checks — those stay verbatim, they remain the spec the wire output is measured against. The "extension-pick blocker" half of the original guard becomes "translate-compensation responsibility" — same load-bearing posture, different layer.
+
+---
+
+**Scope guard.** This Round resolves the two flagged terms only:
+- `remark-math currency rule` vocab drift — resolved by the CONTEXT.md edit above (PRD author applies).
+- Library pick — `github.com/litao91/goldmark-mathjax` stands; ADR-0004 Decision 3 ("byte-identically") must be rewritten to name the translate-layer post-pass route (`to-prd` author applies the ADR-0004 edit too).
+
+Critic's remaining Round-2 defects (Fixture #5 soft-break shape, `translate` unclosed-`$$` predicate spelled-out, fixture #3/#4 as library-pick blockers, fixture #8 verification) are artifact-shape concerns owned by critic ↔ proposer in the resumed `to-prd` Stage, not this triggered-grill's scope.
+
+Using terms `translate-layer currency post-pass`, `currency-rule demote-only`, `$5 and $x$ divergence fixture` — implementation-detail vocabulary, not on the wire, belongs in ADR-0004 and PRD §Implementation Decisions, **not** in `<product_dir>/CONTEXT.md`. Same posture as `ast.InlineMath`/`ast.Math` per grill-0 Round 2 PO direction.
 
 ### VERDICT: continue
