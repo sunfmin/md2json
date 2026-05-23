@@ -1,4 +1,4 @@
-module github.com/sunfmin/md2json2
+module github.com/sunfmin/md2json
 
 go 1.26.3
 

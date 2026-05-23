@@ -1,6 +1,6 @@
-# md2json2 — product glossary
+# md2json — product glossary
 
-_Load-bearing terms for the md2json2 CLI. Populated inline as the Interviewer/PO grill resolves each term. Format: bold term, one or two sentence definition, optional `_Avoid_:` line for confusable synonyms._
+_Load-bearing terms for the md2json CLI. Populated inline as the Interviewer/PO grill resolves each term. Format: bold term, one or two sentence definition, optional `_Avoid_:` line for confusable synonyms._
 
 **Markdown (input)**:
 The v1 accepted input dialect is **GitHub Flavored Markdown (GFM)** — CommonMark plus tables, task lists, strikethrough, and autolinks — with **YAML frontmatter** (delimited by leading `---` lines). Fenced code blocks (with info string) and footnotes are in scope; raw HTML is preserved verbatim as `html` nodes (not parsed into).
@@ -11,7 +11,7 @@ A YAML block at the top of the input file fenced by `---` on its own lines befor
 _Avoid_: meta-block, header, preamble.
 
 **Invalid frontmatter (policy)**:
-Hard error. When the document opens with a closed `---` fence but the YAML between the fences does not parse (tab indentation, unbalanced quotes, duplicate keys, etc.), write `md2json2: <path>:<line>:<col>: invalid frontmatter: <yaml error>` to stderr, exit `1`, nothing on stdout. `--frontmatter-only` follows the same rule (failure is upstream of which view is requested). Matches the global fail-fast-on-malformed-structured-input posture; no `_raw`/`_error` soft-fallback envelope is emitted.
+Hard error. When the document opens with a closed `---` fence but the YAML between the fences does not parse (tab indentation, unbalanced quotes, duplicate keys, etc.), write `md2json: <path>:<line>:<col>: invalid frontmatter: <yaml error>` to stderr, exit `1`, nothing on stdout. `--frontmatter-only` follows the same rule (failure is upstream of which view is requested). Matches the global fail-fast-on-malformed-structured-input posture; no `_raw`/`_error` soft-fallback envelope is emitted.
 
 **AST (output) / mdast**:
 The JSON node tree shape emitted under the envelope's `ast` field. Conforms to **`mdast`** (unified/remark's Markdown AST), e.g. `root` → `heading{depth, children}` → `text{value}`, `paragraph`, `strong`, `emphasis`, `list`, `code`, `html`, etc. Internally the tool parses with `goldmark` and translates `goldmark`'s Go-native AST into mdast-shaped JSON on emit — the wire contract is mdast, not goldmark's internal types.
@@ -24,7 +24,7 @@ Each emitted node carries a `position: { start: {line, column, offset}, end: {li
 The top-level shape of every successful invocation's stdout: `{"frontmatter": <object>|null, "ast": <mdast root node>}`. Single JSON document per invocation. Compact (single-line) by default; `--pretty` switches to 2-space-indented form.
 
 **CLI contract**:
-Unix-filter-first invocation `md2json2 [FILE]`. Reads from `FILE` if given, else from stdin (`FILE=-` is the explicit stdin sentinel and is equivalent to omitting the positional). Always writes the JSON envelope to **stdout**; errors go to **stderr** with a non-zero exit code. One file per invocation in v1 — no directory/glob/multi-file mode.
+Unix-filter-first invocation `md2json [FILE]`. Reads from `FILE` if given, else from stdin (`FILE=-` is the explicit stdin sentinel and is equivalent to omitting the positional). Always writes the JSON envelope to **stdout**; errors go to **stderr** with a non-zero exit code. One file per invocation in v1 — no directory/glob/multi-file mode.
 _Avoid_: "input mode" (ambiguous); always speak in terms of stdin vs positional FILE.
 
 **v1 flags**:
@@ -35,14 +35,14 @@ _Avoid_: "input mode" (ambiguous); always speak in terms of stdin vs positional 
 _Avoid_: success-with-error-body-on-stdout — stdout stays clean for piping.
 
 **Error format**:
-Human-readable line on stderr matching exactly one regex: `^md2json2: ([^:]+):(\d+):(\d+): (.+)$`. `<path>` is the literal `-` when reading from stdin (not `stdin`, not `<stdin>`, not empty) — round-trips with the CLI's own stdin sentinel. When goldmark reports a line but no column, print `<path>:<line>:1:` (round unknown column **up to 1**, never `0`, since lines/columns are 1-indexed elsewhere). When the error is document-scoped with no position at all, use the sentinel `<path>:0:0:` — the same regex still matches and `0:0` conventionally means "no position available." No JSON-on-stdout error fallback.
+Human-readable line on stderr matching exactly one regex: `^md2json: ([^:]+):(\d+):(\d+): (.+)$`. `<path>` is the literal `-` when reading from stdin (not `stdin`, not `<stdin>`, not empty) — round-trips with the CLI's own stdin sentinel. When goldmark reports a line but no column, print `<path>:<line>:1:` (round unknown column **up to 1**, never `0`, since lines/columns are 1-indexed elsewhere). When the error is document-scoped with no position at all, use the sentinel `<path>:0:0:` — the same regex still matches and `0:0` conventionally means "no position available." No JSON-on-stdout error fallback.
 _Avoid_: `stdin` / `<stdin>` as the path token; `:0:` for unknown column; omitting the column field entirely.
 
 **Distribution**:
-Implemented in **Go**, parser **`github.com/yuin/goldmark`** (with its official GFM, frontmatter, footnote extensions as applicable). Primary install: `go install github.com/<owner>/md2json2@latest`. Secondary: prebuilt static binaries on GitHub Releases for `darwin/{amd64,arm64}`, `linux/{amd64,arm64}`, `windows/amd64`. Homebrew tap is post-v1.
+Implemented in **Go**, parser **`github.com/yuin/goldmark`** (with its official GFM, frontmatter, footnote extensions as applicable). Primary install: `go install github.com/<owner>/md2json@latest`. Secondary: prebuilt static binaries on GitHub Releases for `darwin/{amd64,arm64}`, `linux/{amd64,arm64}`, `windows/amd64`. Homebrew tap is post-v1.
 
 **v1 ship criterion**:
-Running `md2json2 < post.md` on a typical GFM blog post with YAML frontmatter prints, to stdout, a valid JSON document with a top-level `frontmatter` object and an `ast` field conforming to the documented mdast subset (see **mdast node-set v1**), exiting `0`. On empty input: `md2json2 --no-position < empty.md` prints exactly `{"frontmatter":null,"ast":{"type":"root","children":[]}}` and exits `0`; `md2json2 < empty.md` (default) prints the same envelope with a zero-width `position` field on the `root` (`{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":1,"offset":0}}`) and exits `0`. The single observable acceptance test for v1.
+Running `md2json < post.md` on a typical GFM blog post with YAML frontmatter prints, to stdout, a valid JSON document with a top-level `frontmatter` object and an `ast` field conforming to the documented mdast subset (see **mdast node-set v1**), exiting `0`. On empty input: `md2json --no-position < empty.md` prints exactly `{"frontmatter":null,"ast":{"type":"root","children":[]}}` and exits `0`; `md2json < empty.md` (default) prints the same envelope with a zero-width `position` field on the `root` (`{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":1,"offset":0}}`) and exits `0`. The single observable acceptance test for v1.
 
 **mdast node-set v1**:
 The closed, enumerated set of mdast node types the v1 emitter is allowed to produce. This is the authoritative schema for TDD fixtures and downstream consumers:
@@ -79,7 +79,7 @@ _Avoid_: trimming, normalizing, or re-escaping `value`-bearing fields in `transl
 _Avoid_: "graceful degradation," `unknown` node, `html` fallback for non-HTML constructs.
 
 **Input handling**:
-v1 reads the **whole document into memory** (no streaming; goldmark itself does not stream, and the output is a single JSON document). **No hard size cap** in v1 — trust the OS / Go allocator; suitable for documents up to ~tens of MB, multi-hundred-MB inputs out of scope; a `--max-size` flag is deferred. **Encoding: UTF-8 only.** UTF-16 / latin-1 are non-goals; users with non-UTF-8 input run it through `iconv` first. Invalid UTF-8 bytes are a **hard error**: `md2json2: <path>:<line>:<col>: invalid utf-8 byte at offset <N>` on stderr, exit `1` (no silent U+FFFD substitution — that would be data corruption masquerading as success). **Leading UTF-8 BOM**: stripped silently before any further processing; `position.offset` values are therefore relative to the post-BOM-strip document, not the raw file. **Line endings**: CRLF is normalized to LF **before** parsing; `position.line` reflects logical lines (cross-platform stable), `position.column` counts UTF-8 code points in the normalized line, `position.offset` is a byte offset into the normalized (LF-only) document.
+v1 reads the **whole document into memory** (no streaming; goldmark itself does not stream, and the output is a single JSON document). **No hard size cap** in v1 — trust the OS / Go allocator; suitable for documents up to ~tens of MB, multi-hundred-MB inputs out of scope; a `--max-size` flag is deferred. **Encoding: UTF-8 only.** UTF-16 / latin-1 are non-goals; users with non-UTF-8 input run it through `iconv` first. Invalid UTF-8 bytes are a **hard error**: `md2json: <path>:<line>:<col>: invalid utf-8 byte at offset <N>` on stderr, exit `1` (no silent U+FFFD substitution — that would be data corruption masquerading as success). **Leading UTF-8 BOM**: stripped silently before any further processing; `position.offset` values are therefore relative to the post-BOM-strip document, not the raw file. **Line endings**: CRLF is normalized to LF **before** parsing; `position.line` reflects logical lines (cross-platform stable), `position.column` counts UTF-8 code points in the normalized line, `position.offset` is a byte offset into the normalized (LF-only) document.
 _Avoid_: "lenient encoding," "auto-detect encoding," U+FFFD replacement.
 
 **Wedge (why this exists)**:

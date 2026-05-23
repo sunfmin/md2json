@@ -1,4 +1,4 @@
-// md2json2 reads a single Markdown document from stdin or a positional FILE
+// md2json reads a single Markdown document from stdin or a positional FILE
 // and writes a JSON envelope of {"frontmatter": ..., "ast": ...} to stdout.
 //
 // This top-level main() is intentionally a thin shell: it injects the process
@@ -9,7 +9,7 @@ package main
 import (
 	"os"
 
-	"github.com/sunfmin/md2json2/internal/cli"
+	"github.com/sunfmin/md2json/internal/cli"
 )
 
 func main() {

@@ -6,7 +6,7 @@
 
 ## Context
 
-CONTEXT.md "Distribution" + PRD US 31–32 + issue 12 require two install paths for v1: `go install github.com/sunfmin/md2json2@latest` (primary) and prebuilt static binaries on GitHub Releases for `darwin/{amd64,arm64}`, `linux/{amd64,arm64}`, `windows/amd64` (secondary). The release pipeline that produces the Releases needs three load-bearing decisions pinned somewhere a future maintainer will find them: how the binaries are statically linked, how the build is reproducible across runners, and which checksum tool emits the manifest.
+CONTEXT.md "Distribution" + PRD US 31–32 + issue 12 require two install paths for v1: `go install github.com/sunfmin/md2json@latest` (primary) and prebuilt static binaries on GitHub Releases for `darwin/{amd64,arm64}`, `linux/{amd64,arm64}`, `windows/amd64` (secondary). The release pipeline that produces the Releases needs three load-bearing decisions pinned somewhere a future maintainer will find them: how the binaries are statically linked, how the build is reproducible across runners, and which checksum tool emits the manifest.
 
 Constraints from the acceptance criteria of issue 12:
 - Each uploaded binary must be statically linked ("no required runtime beyond the OS").
@@ -24,13 +24,13 @@ Constraints from the existing module:
 
 2. **`-trimpath` + `-ldflags="-s -w"` for reproducible, small binaries.** `-trimpath` strips the host filesystem path from every binary so two CI runs on different runners produce byte-identical binaries (modulo embedded build-time strings like the version stamp). `-s -w` strips the symbol table and DWARF debug info, shrinking the binary by ~30 % without affecting runtime behavior (no panics-with-line-numbers in production use — error messages are constructed by `cli`, not by the Go runtime).
 
-3. **Version stamping via `-ldflags="-X .../cli.Version=$TAG"`.** The release workflow exports `GITHUB_REF_NAME` as `$TAG` and passes it through `-ldflags -X github.com/sunfmin/md2json2/internal/cli.Version=$TAG` so the published binary's `-V` output is the same string as the GitHub Release tag. `internal/cli/version.go` defines `Version` as a `var` (not a `const`) so the link-time substitution takes effect; the default value `"dev"` keeps unstamped `go build .` invocations producing a sensible `-V` line.
+3. **Version stamping via `-ldflags="-X .../cli.Version=$TAG"`.** The release workflow exports `GITHUB_REF_NAME` as `$TAG` and passes it through `-ldflags -X github.com/sunfmin/md2json/internal/cli.Version=$TAG` so the published binary's `-V` output is the same string as the GitHub Release tag. `internal/cli/version.go` defines `Version` as a `var` (not a `const`) so the link-time substitution takes effect; the default value `"dev"` keeps unstamped `go build .` invocations producing a sensible `-V` line.
 
 4. **`shasum -a 256` for the SHA256SUMS manifest.** Both Ubuntu and macOS GitHub-hosted runners ship `shasum` (Perl-based, part of `perl-base` on Linux, system tool on macOS). `sha256sum` is Linux-only (coreutils) and is absent from macOS by default. Standardizing on `shasum -a 256` would let us move the checksum job between runner OSes without rewriting the command; the workflow as committed pins `ubuntu-latest` for the checksums job, but the portability of the tool is still the better default.
 
 5. **Smoke test = v1 ship-criterion on linux/amd64 + darwin/arm64.** The acceptance criterion requires smoke on *at least* these two; we add no others because no other matrix entry has a GitHub-hosted exec host that matches the cross-compile target. `linux/arm64` could run on `ubuntu-24.04-arm` if/when we move off the free tier; `windows/amd64` could run on `windows-latest`. Both are deferred as runner-cost / setup-complexity tradeoffs not justified by the v1 ship criterion.
 
-6. **Asset filename format: `md2json2-<goos>-<goarch>[.exe]`.** Names the platform/arch unambiguously and parses trivially from a download URL. The `.exe` suffix only appears on Windows (so a macOS user does not download `md2json2-darwin-arm64.exe` by accident from a tab-completed URL).
+6. **Asset filename format: `md2json-<goos>-<goarch>[.exe]`.** Names the platform/arch unambiguously and parses trivially from a download URL. The `.exe` suffix only appears on Windows (so a macOS user does not download `md2json-darwin-arm64.exe` by accident from a tab-completed URL).
 
 7. **GitHub-hosted runners.** `ubuntu-latest` for linux/* + windows cross-compile + checksums + release publish; `macos-14` for darwin/* (the only runner family with an Apple Silicon host that can actually exec a darwin/arm64 binary). No self-hosted runners in v1.
 

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sunfmin/md2json2/internal/parse"
+	"github.com/sunfmin/md2json/internal/parse"
 	"github.com/yuin/goldmark/ast"
 )
 

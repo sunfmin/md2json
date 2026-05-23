@@ -28,9 +28,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/sunfmin/md2json2/internal/emit"
-	"github.com/sunfmin/md2json2/internal/parse"
-	"github.com/sunfmin/md2json2/internal/translate"
+	"github.com/sunfmin/md2json/internal/emit"
+	"github.com/sunfmin/md2json/internal/parse"
+	"github.com/sunfmin/md2json/internal/translate"
 )
 
 // mdastNodeSetV1 is the closed enumeration of mdast node types the v1

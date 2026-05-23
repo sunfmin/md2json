@@ -24,7 +24,7 @@
 //   - Closed fence with malformed YAML → hard error. The yaml.v3 decoder's
 //     `yaml: line N: <msg>` is reshaped into a typed `InvalidFrontmatter`
 //     carrying the source line/column so cli can render the canonical
-//     `md2json2: <path>:<line>:<col>: invalid frontmatter: <msg>` stderr
+//     `md2json: <path>:<line>:<col>: invalid frontmatter: <msg>` stderr
 //     line and exit 1. yaml.v3 doesn't carry a column, so column falls
 //     back to 1 per CONTEXT.md "Error format" (`round unknown column up
 //     to 1, never 0`).
@@ -111,7 +111,7 @@ type Result struct {
 // InvalidFrontmatterError is the typed error returned when a document opens
 // with a closed `---` fence but the YAML between the fences fails to parse.
 // cli converts this into the canonical
-// `md2json2: <path>:<line>:<col>: invalid frontmatter: <msg>` stderr line
+// `md2json: <path>:<line>:<col>: invalid frontmatter: <msg>` stderr line
 // and exit 1 (per CONTEXT.md "Invalid frontmatter (policy)" and PRD user
 // story 21).
 //

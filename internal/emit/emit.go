@@ -1,4 +1,4 @@
-// Package emit JSON-encodes the md2json2 output envelope. The wire shape is
+// Package emit JSON-encodes the md2json output envelope. The wire shape is
 // `{"frontmatter": <object|scalar|null>, "ast": <mdast root node>}` in default
 // mode; under `--frontmatter-only` the envelope is bypassed and just the
 // frontmatter value (or `null`) is emitted at the top level.
@@ -27,7 +27,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/sunfmin/md2json2/internal/translate"
+	"github.com/sunfmin/md2json/internal/translate"
 )
 
 // Options drives the emit stage. At S03 we need NoPosition (drop the

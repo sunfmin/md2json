@@ -4,7 +4,7 @@ package cli
 // `--version` flag. It is a package-level `var` (not a const) so the release
 // workflow can override it at link time:
 //
-//	go build -ldflags="-X github.com/sunfmin/md2json2/internal/cli.Version=$TAG" .
+//	go build -ldflags="-X github.com/sunfmin/md2json/internal/cli.Version=$TAG" .
 //
 // For local development and unstamped `go install ./...@latest` invocations
 // the default `"dev"` value is what users see. The release workflow

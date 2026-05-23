@@ -301,7 +301,7 @@ func TestReleaseWorkflowBuildIsStaticallyLinked(t *testing.T) {
 			// ldflags must stamp the cli.Version package var; the test does
 			// not pin the exact env-var spelling (`$TAG` vs `${GITHUB_REF_NAME}`),
 			// only the substitution target.
-			if strings.Contains(runNode, "github.com/sunfmin/md2json2/internal/cli.Version=") {
+			if strings.Contains(runNode, "github.com/sunfmin/md2json/internal/cli.Version=") {
 				foundLdflagsVersion = true
 			}
 		}
@@ -319,7 +319,7 @@ func TestReleaseWorkflowBuildIsStaticallyLinked(t *testing.T) {
 
 // TestReleaseWorkflowProducesUnambiguousAssetFilenames pins the second half
 // of acceptance criterion #2: each uploaded asset's filename names the
-// platform/arch unambiguously (`md2json2-<goos>-<goarch>[.exe]`).
+// platform/arch unambiguously (`md2json-<goos>-<goarch>[.exe]`).
 //
 // The check is a substring scan over the build job's steps: at least one
 // step must reference an asset name parameterized by `${{ matrix.goos }}` and
@@ -342,13 +342,13 @@ func TestReleaseWorkflowProducesUnambiguousAssetFilenames(t *testing.T) {
 				blob += "\n" + s
 			}
 		}
-		if strings.Contains(blob, "md2json2-") &&
+		if strings.Contains(blob, "md2json-") &&
 			strings.Contains(blob, "${{ matrix.goos }}") &&
 			strings.Contains(blob, "${{ matrix.goarch }}") {
 			return
 		}
 	}
-	t.Errorf("no build step produces an asset filename of the form `md2json2-${{ matrix.goos }}-${{ matrix.goarch }}[.exe]`; criterion #2 requires platform-unambiguous filenames")
+	t.Errorf("no build step produces an asset filename of the form `md2json-${{ matrix.goos }}-${{ matrix.goarch }}[.exe]`; criterion #2 requires platform-unambiguous filenames")
 }
 
 // TestReleaseWorkflowPublishesSHA256SUMS pins acceptance criterion #4: a

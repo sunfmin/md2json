@@ -1,6 +1,6 @@
 package main_test
 
-// Black-box integration-test harness. Builds the md2json2 binary once via
+// Black-box integration-test harness. Builds the md2json binary once via
 // TestMain, then runs every directory under testdata/fixtures/ as a fixture:
 //
 //   testdata/fixtures/<name>/
@@ -29,7 +29,7 @@ import (
 var binaryPath string
 
 // v1ShipCriterionEnvelope is the canonical stdout for the **v1 ship criterion**
-// (CONTEXT.md): `md2json2 --no-position < empty.md` emits exactly this single
+// (CONTEXT.md): `md2json --no-position < empty.md` emits exactly this single
 // JSON document and exits 0. Pinned as a file-scope constant so the two tests
 // that consume it (`TestGoInstallProducesBinaryPassingShipCriterion` here and
 // `TestReleaseWorkflowSmokeTestRunsShipCriterion` in release_workflow_test.go)
@@ -40,14 +40,14 @@ var binaryPath string
 const v1ShipCriterionEnvelope = `{"frontmatter":null,"ast":{"type":"root","children":[]}}`
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "md2json2-bin-")
+	dir, err := os.MkdirTemp("", "md2json-bin-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "TestMain: mktemp:", err)
 		os.Exit(2)
 	}
 	defer os.RemoveAll(dir)
 
-	binaryPath = filepath.Join(dir, "md2json2")
+	binaryPath = filepath.Join(dir, "md2json")
 	// Build with the test invocation's GOOS/GOARCH; no CGO needed.
 	build := exec.Command("go", "build", "-o", binaryPath, ".")
 	build.Stdout = os.Stdout
@@ -221,7 +221,7 @@ func TestHarnessDetectsSingleByteStdoutDiff(t *testing.T) {
 // CLI's stdin sentinel). Asserts existence + correctness; if every stdin-
 // source error fixture loses the `-` path token, this test fails.
 func TestStdinSourceFixtureUsesDashPathToken(t *testing.T) {
-	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)$`)
+	canonical := regexp.MustCompile(`^md2json: ([^:]+):(\d+):(\d+): (.+)$`)
 	root := filepath.Join("testdata", "fixtures")
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -261,7 +261,7 @@ func TestStdinSourceFixtureUsesDashPathToken(t *testing.T) {
 		exitCode, _ := strconv.Atoi(strings.TrimSpace(string(exitBytes)))
 		// Only exit 1 (document-scoped / read error) means stdin actually
 		// became the source. Exit 2 fixtures are pre-input usage errors —
-		// their <path> token is `md2json2`, not `-`, even though no
+		// their <path> token is `md2json`, not `-`, even though no
 		// positional is present.
 		if exitCode != 1 {
 			continue
@@ -288,10 +288,10 @@ func TestStdinSourceFixtureUsesDashPathToken(t *testing.T) {
 // TestPreInputUsageErrorFixtureUsesMd2json2PathToken (S12 criterion #9,
 // pre-input half): at least one fixture in the suite is a pre-input usage-
 // error fixture (unknown flag, missing FILE before any bytes read) whose
-// canonical stderr line uses the literal `md2json2` as the <path> token
+// canonical stderr line uses the literal `md2json` as the <path> token
 // (PRD user story 20). Exit code is 2. Asserts existence + correctness.
 func TestPreInputUsageErrorFixtureUsesMd2json2PathToken(t *testing.T) {
-	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)$`)
+	canonical := regexp.MustCompile(`^md2json: ([^:]+):(\d+):(\d+): (.+)$`)
 	root := filepath.Join("testdata", "fixtures")
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -321,9 +321,9 @@ func TestPreInputUsageErrorFixtureUsesMd2json2PathToken(t *testing.T) {
 			if m == nil {
 				continue
 			}
-			if m[1] != "md2json2" {
+			if m[1] != "md2json" {
 				t.Errorf("fixture %s is a pre-input usage-error fixture (exit 2) but <path> token is %q, want %q",
-					e.Name(), m[1], "md2json2")
+					e.Name(), m[1], "md2json")
 			}
 			if m[2] != "0" || m[3] != "0" {
 				t.Errorf("fixture %s pre-input usage-error position: got %s:%s, want 0:0",
@@ -339,7 +339,7 @@ func TestPreInputUsageErrorFixtureUsesMd2json2PathToken(t *testing.T) {
 
 // TestCanonicalStderrRegexMatchesEveryFixture (S12 criterion #8): every
 // emitted stderr line across the fixture suite must match the single canonical
-// regex `^md2json2: ([^:]+):(\d+):(\d+): (.+)$` (CONTEXT.md "Error format").
+// regex `^md2json: ([^:]+):(\d+):(\d+): (.+)$` (CONTEXT.md "Error format").
 // This is the property check that pins the "one regex covers every diagnostic"
 // contract; a future fixture whose `stderr` file drifts from the format fails
 // here before it can hide in TestFixtures.
@@ -348,7 +348,7 @@ func TestPreInputUsageErrorFixtureUsesMd2json2PathToken(t *testing.T) {
 // non-empty stderr only. A fixture whose stderr has multiple lines fails the
 // test if ANY line drifts from the canonical shape.
 func TestCanonicalStderrRegexMatchesEveryFixture(t *testing.T) {
-	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)$`)
+	canonical := regexp.MustCompile(`^md2json: ([^:]+):(\d+):(\d+): (.+)$`)
 	root := filepath.Join("testdata", "fixtures")
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -385,7 +385,7 @@ func TestCanonicalStderrRegexMatchesEveryFixture(t *testing.T) {
 }
 
 // TestGoInstallProducesBinaryPassingShipCriterion is S13 acceptance criterion
-// #1: `go install ./...` from a clean checkout produces an `md2json2` binary
+// #1: `go install ./...` from a clean checkout produces an `md2json` binary
 // on `PATH` that passes the v1 ship-criterion fixture.
 //
 // Strategy: install the current module into a throw-away GOBIN (no global
@@ -395,7 +395,7 @@ func TestCanonicalStderrRegexMatchesEveryFixture(t *testing.T) {
 // exact v1 ship-criterion envelope and exit 0.
 //
 // This pins the install path that PRD US 31 / CONTEXT.md "Distribution"
-// describes ("Primary install: `go install github.com/<owner>/md2json2@latest`")
+// describes ("Primary install: `go install github.com/<owner>/md2json@latest`")
 // inside `go test`, so the install ergonomics are exercised on every CI run
 // without depending on a real `@latest` published tag.
 func TestGoInstallProducesBinaryPassingShipCriterion(t *testing.T) {
@@ -423,9 +423,9 @@ func TestGoInstallProducesBinaryPassingShipCriterion(t *testing.T) {
 	// elsewhere it's the bare program name. We do not currently run the test
 	// suite on Windows in CI (the release matrix cross-compiles for Windows),
 	// but supporting both keeps this test portable for local developers.
-	binName := "md2json2"
+	binName := "md2json"
 	if runtime.GOOS == "windows" {
-		binName = "md2json2.exe"
+		binName = "md2json.exe"
 	}
 	installed := filepath.Join(gobin, binName)
 	if _, err := os.Stat(installed); err != nil {

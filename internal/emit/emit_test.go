@@ -29,9 +29,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sunfmin/md2json2/internal/emit"
-	"github.com/sunfmin/md2json2/internal/parse"
-	"github.com/sunfmin/md2json2/internal/translate"
+	"github.com/sunfmin/md2json/internal/emit"
+	"github.com/sunfmin/md2json/internal/parse"
+	"github.com/sunfmin/md2json/internal/translate"
 )
 
 // representativeCorpus is a small but type-diverse input that exercises

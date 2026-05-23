@@ -1,11 +1,11 @@
-# md2json2 release pipeline (S13).
+# md2json release pipeline (S13).
 #
 # Triggered by a tag matching `v*`. Cross-compiles a statically-linked binary
 # for each of the five platforms pinned by the PRD's Distribution entry
 # (CONTEXT.md "Distribution" / PRD US 32): darwin/amd64, darwin/arm64,
 # linux/amd64, linux/arm64, windows/amd64. The build is `CGO_ENABLED=0`
 # with `-trimpath` and an ldflags stamp into
-# `github.com/sunfmin/md2json2/internal/cli.Version` so the published
+# `github.com/sunfmin/md2json/internal/cli.Version` so the published
 # binary's `-V` output matches the Release tag.
 #
 # Smoke test (acceptance criterion #5): linux/amd64 and darwin/arm64 matrix
@@ -83,7 +83,7 @@ jobs:
       - name: Build statically-linked binary
         run: |
           TAG="${GITHUB_REF_NAME}"
-          OUT="md2json2-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          OUT="md2json-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
           # CGO_ENABLED=0 is set in the job env block; reaffirming via the
           # command makes the static-link contract visible to a reader of
           # the step alone. -trimpath strips host paths from the binary for
@@ -91,7 +91,7 @@ jobs:
           # so the published binary's `-V` matches the Release tag.
           CGO_ENABLED=0 go build \
             -trimpath \
-            -ldflags="-s -w -X github.com/sunfmin/md2json2/internal/cli.Version=${TAG}" \
+            -ldflags="-s -w -X github.com/sunfmin/md2json/internal/cli.Version=${TAG}" \
             -o "${OUT}" \
             .
           ls -la "${OUT}"
@@ -120,8 +120,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: md2json2-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: md2json2-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          name: md2json-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: md2json-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
           if-no-files-found: error
 
   checksums:
@@ -141,7 +141,7 @@ jobs:
           # and on Linux runners (provided by perl-base / coreutils-extras
           # in ubuntu-latest's default image). Pinned in ADR-0003.
           cd dist
-          shasum -a 256 md2json2-* > SHA256SUMS
+          shasum -a 256 md2json-* > SHA256SUMS
           cat SHA256SUMS
 
       - name: Upload SHA256SUMS as artifact
@@ -166,7 +166,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/md2json2-*
+            dist/md2json-*
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           generate_release_notes: true

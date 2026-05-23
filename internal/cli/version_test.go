@@ -11,7 +11,7 @@ import (
 // source of truth for the `-V` / `--version` output, so the release workflow
 // can do
 //
-//	go build -ldflags="-X github.com/sunfmin/md2json2/internal/cli.Version=$TAG" .
+//	go build -ldflags="-X github.com/sunfmin/md2json/internal/cli.Version=$TAG" .
 //
 // to bake the tag (e.g. `v1.2.3`) into the published binary without touching
 // source. The default value is a non-empty placeholder so a plain `go build .`
@@ -24,7 +24,7 @@ import (
 //     value in `t.Cleanup` keeps the test suite hermetic.
 func TestVersionFlagUsesBuildStampedVariable(t *testing.T) {
 	// Default value half: the `-V` output must include the current `Version`.
-	stdout, stderr, exit := run(t, []string{"md2json2", "-V"}, "")
+	stdout, stderr, exit := run(t, []string{"md2json", "-V"}, "")
 	if exit != 0 {
 		t.Fatalf("exit code: got %d, want 0", exit)
 	}
@@ -46,7 +46,7 @@ func TestVersionFlagUsesBuildStampedVariable(t *testing.T) {
 	t.Cleanup(func() { Version = orig })
 	const stamped = "v9.9.9-release-pipeline-test"
 	Version = stamped
-	stdout2, stderr2, exit2 := run(t, []string{"md2json2", "-V"}, "")
+	stdout2, stderr2, exit2 := run(t, []string{"md2json", "-V"}, "")
 	if exit2 != 0 {
 		t.Fatalf("exit code (stamped): got %d, want 0", exit2)
 	}

@@ -1,4 +1,4 @@
-// Package cli is the md2json2 entry point: it parses argv, opens input and
+// Package cli is the md2json entry point: it parses argv, opens input and
 // output sinks, and drives the read → parse → translate → emit pipeline.
 // Lower modules return typed errors; cli is the single place that turns those
 // into the canonical stderr line + exit code mapping.
@@ -11,17 +11,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sunfmin/md2json2/internal/emit"
-	"github.com/sunfmin/md2json2/internal/parse"
-	"github.com/sunfmin/md2json2/internal/read"
-	"github.com/sunfmin/md2json2/internal/translate"
+	"github.com/sunfmin/md2json/internal/emit"
+	"github.com/sunfmin/md2json/internal/parse"
+	"github.com/sunfmin/md2json/internal/read"
+	"github.com/sunfmin/md2json/internal/translate"
 )
 
 // usageText is the canonical -h / --help message. It names every v1 flag
 // (CONTEXT.md "v1 flags") and the positional FILE / `-` stdin sentinel
 // convention (CONTEXT.md "CLI contract"). Sent to stdout because usage output
 // is normal program output for `-h` (exit 0), not diagnostic.
-const usageText = `Usage: md2json2 [FLAGS] [FILE]
+const usageText = `Usage: md2json [FLAGS] [FILE]
 
 Convert a single Markdown document (GFM + YAML frontmatter) to a JSON
 envelope on stdout. Reads from FILE if given, otherwise from stdin; the
@@ -43,19 +43,19 @@ Exit codes:
 
 // versionLine renders the canonical -V / --version output by composing the
 // build-stamped `Version` package var (see version.go) into the line
-// `md2json2 <Version>\n`. Pulled out of a `const` so the release workflow's
+// `md2json <Version>\n`. Pulled out of a `const` so the release workflow's
 // `-ldflags "-X .../cli.Version=$TAG"` substitution takes effect at link
 // time without touching the rendering call site. S13 acceptance criterion #1
 // (the released binary's `-V` reflects the published tag).
-func versionLine() string { return "md2json2 " + Version + "\n" }
+func versionLine() string { return "md2json " + Version + "\n" }
 
 // preInputPathToken is the `<path>` token used in the canonical stderr line
 // for any usage error raised BEFORE an input source has been determined —
 // unknown flag, missing flag value, unreadable `FILE` before any bytes are
 // read. Per CONTEXT.md "Error format" + PRD user story 20: the literal
-// program name `md2json2` is the sentinel for "no source was ever in play."
+// program name `md2json` is the sentinel for "no source was ever in play."
 // Distinct from `-` (stdin was the chosen source) and a real file path.
-const preInputPathToken = "md2json2"
+const preInputPathToken = "md2json"
 
 // Run is the cli module's single entry point. It takes argv (argv[0] is the
 // program name, per Unix convention), an input reader (the injected stdin),
@@ -82,7 +82,7 @@ type options struct {
 // parseArgs walks args (argv minus argv[0]) and returns the populated options
 // plus, on failure, a usage-error message. The error message becomes the
 // `(.+)` tail of the canonical stderr line; the caller renders the
-// `md2json2: md2json2:0:0: <msg>\n` envelope and exits 2 (S12 criterion #4).
+// `md2json: md2json:0:0: <msg>\n` envelope and exits 2 (S12 criterion #4).
 // Returning `usageErr=""` signals success.
 func parseArgs(args []string) (opts options, usageErr string) {
 	i := 0
@@ -188,7 +188,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// writes the envelope to that file (creating or truncating) instead of
 	// stdout (S12 criterion #1). A failure to open the output file is treated
 	// as a pre-input usage error per the error-format/exit-code mapping —
-	// no bytes were ever read from input, so `<path>` stays `md2json2` and
+	// no bytes were ever read from input, so `<path>` stays `md2json` and
 	// the exit code is 2.
 	out := stdout
 	if opts.output != "" {
@@ -219,7 +219,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err != nil {
 		// The malformed-frontmatter path returns a typed error carrying
 		// source-relative line/col so we can render the canonical
-		// `md2json2: <path>:<line>:<col>: invalid frontmatter: <msg>` stderr
+		// `md2json: <path>:<line>:<col>: invalid frontmatter: <msg>` stderr
 		// line per CONTEXT.md "Invalid frontmatter (policy)" + PRD US 21
 		// (S09 criterion #3). Other parse-stage errors are document-scoped
 		// and use the `:0:0:` sentinel.
@@ -256,7 +256,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 // writePositionedError renders the canonical stderr line for an error that
 // carries a known source line/column, per CONTEXT.md "Error format":
-// `^md2json2: ([^:]+):(\d+):(\d+): (.+)$`. line and col are 1-indexed; pass
+// `^md2json: ([^:]+):(\d+):(\d+): (.+)$`. line and col are 1-indexed; pass
 // `0, 0` only via writeDocScopedError, which handles the document-scoped
 // sentinel semantics separately.
 //
@@ -275,7 +275,7 @@ func writePositionedError(stderr io.Writer, pathToken string, line, col int, msg
 	if line > 0 && col < 1 {
 		col = 1
 	}
-	fmt.Fprintf(stderr, "md2json2: %s:%d:%d: %s\n", pathToken, line, col, msg)
+	fmt.Fprintf(stderr, "md2json: %s:%d:%d: %s\n", pathToken, line, col, msg)
 }
 
 // writeDocScopedError renders the canonical stderr line for a document-scoped
@@ -295,7 +295,7 @@ func writeDocScopedError(stderr io.Writer, pathToken string, err error) {
 // usage error — a failure raised BEFORE any input source has been determined
 // (unknown flag, missing flag value, unreadable input FILE, uncreatable output
 // FILE). Per CONTEXT.md "Error format" + PRD US20 the `<path>` token is the
-// literal program name `md2json2` (no source ever in play), the position is
+// literal program name `md2json` (no source ever in play), the position is
 // the `:0:0:` sentinel, and the exit code is 2 (usage error, distinct from
 // 1 = document-scoped parse error). Returns the exit code so call sites read
 // `return writePreInputUsageError(stderr, msg)` and the (path-token, position,

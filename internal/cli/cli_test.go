@@ -22,18 +22,18 @@ func run(t *testing.T, argv []string, stdin string) (stdout, stderr string, exit
 }
 
 // wantEnvelopeNoPosition is the v1 ship criterion's exact stdout for
-// `md2json2 --no-position < empty.md`: no `position` key on root.
+// `md2json --no-position < empty.md`: no `position` key on root.
 const wantEnvelopeNoPosition = `{"frontmatter":null,"ast":{"type":"root","children":[]}}`
 
 // wantEnvelopeDefault is the v1 ship criterion's exact stdout for default
-// `md2json2 < empty.md`: same envelope but with a zero-width `position` on root.
+// `md2json < empty.md`: same envelope but with a zero-width `position` on root.
 const wantEnvelopeDefault = `{"frontmatter":null,"ast":{"type":"root","children":[],"position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":1,"offset":0}}}}`
 
 // S01 Test 1, re-pinned for S03 (criterion #1): empty stdin under
 // `--no-position` produces exactly the no-position envelope, exit 0. This is
 // the v1 ship criterion's first half.
 func TestEmptyStdinNoPositionEmitsEnvelope(t *testing.T) {
-	stdout, stderr, exit := run(t, []string{"md2json2", "--no-position"}, "")
+	stdout, stderr, exit := run(t, []string{"md2json", "--no-position"}, "")
 	if stdout != wantEnvelopeNoPosition {
 		t.Errorf("stdout mismatch\n  got:  %q\n  want: %q", stdout, wantEnvelopeNoPosition)
 	}
@@ -52,7 +52,7 @@ func TestEmptyStdinNoPositionEmitsEnvelope(t *testing.T) {
 // `position`, so this test is RED until translate/emit produce real position
 // info on the root node.
 func TestEmptyStdinDefaultEmitsEnvelopeWithPosition(t *testing.T) {
-	stdout, stderr, exit := run(t, []string{"md2json2"}, "")
+	stdout, stderr, exit := run(t, []string{"md2json"}, "")
 	if stdout != wantEnvelopeDefault {
 		t.Errorf("stdout mismatch\n  got:  %q\n  want: %q", stdout, wantEnvelopeDefault)
 	}
@@ -84,7 +84,7 @@ func TestPositionalFileEmitsEnvelope(t *testing.T) {
 	// exact against the no-position constant. S01's contract here is only
 	// "positional FILE is accepted, bytes are read"; the envelope shape is now
 	// owned by S03.
-	stdout, stderr, exit := run(t, []string{"md2json2", "--no-position", path}, "")
+	stdout, stderr, exit := run(t, []string{"md2json", "--no-position", path}, "")
 	if stdout != wantEnvelopeNoPosition {
 		t.Errorf("stdout mismatch\n  got:  %q\n  want: %q", stdout, wantEnvelopeNoPosition)
 	}
@@ -104,7 +104,7 @@ func TestPositionalFileEmitsEnvelope(t *testing.T) {
 func TestMissingPositionalFileObservable(t *testing.T) {
 	tmp := t.TempDir()
 	path := tmp + "/does-not-exist.md"
-	_, _, exit := run(t, []string{"md2json2", path}, "")
+	_, _, exit := run(t, []string{"md2json", path}, "")
 	if exit == 0 {
 		t.Errorf("missing file should produce non-zero exit, got 0")
 	}
@@ -115,7 +115,7 @@ func TestMissingPositionalFileObservable(t *testing.T) {
 // envelope from whatever stdin contained. Re-pinned in S03 to use
 // --no-position so the byte-exact comparison stays valid.
 func TestStdinSentinelDashBehavesLikeNoPositional(t *testing.T) {
-	stdout, stderr, exit := run(t, []string{"md2json2", "--no-position", "-"}, "")
+	stdout, stderr, exit := run(t, []string{"md2json", "--no-position", "-"}, "")
 	if stdout != wantEnvelopeNoPosition {
 		t.Errorf("stdout mismatch\n  got:  %q\n  want: %q", stdout, wantEnvelopeNoPosition)
 	}
@@ -135,10 +135,10 @@ func TestHelpAndVersionExitZero(t *testing.T) {
 		name string
 		argv []string
 	}{
-		{"-h", []string{"md2json2", "-h"}},
-		{"--help", []string{"md2json2", "--help"}},
-		{"-V", []string{"md2json2", "-V"}},
-		{"--version", []string{"md2json2", "--version"}},
+		{"-h", []string{"md2json", "-h"}},
+		{"--help", []string{"md2json", "--help"}},
+		{"-V", []string{"md2json", "-V"}},
+		{"--version", []string{"md2json", "--version"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -156,7 +156,7 @@ func TestHelpAndVersionExitZero(t *testing.T) {
 // pins the scalar-passthrough rule for the null case; later slices add the
 // non-null scalar cases (string/number/bool) under S09.
 func TestFrontmatterOnlyEmptyDocEmitsNull(t *testing.T) {
-	stdout, stderr, exit := run(t, []string{"md2json2", "--frontmatter-only"}, "")
+	stdout, stderr, exit := run(t, []string{"md2json", "--frontmatter-only"}, "")
 	wantStdout := "null"
 	if stdout != wantStdout {
 		t.Errorf("stdout mismatch\n  got:  %q\n  want: %q", stdout, wantStdout)
@@ -175,8 +175,8 @@ func TestFrontmatterOnlyEmptyDocEmitsNull(t *testing.T) {
 // the introduction of the read module + the cli wiring that routes a typed
 // read-stage error into the canonical stderr line.
 func TestLeadingInvalidUTF8StdinHardErrors(t *testing.T) {
-	stdout, stderr, exit := run(t, []string{"md2json2"}, "\xFF")
-	wantStderr := "md2json2: -:1:1: invalid utf-8 byte at offset 0\n"
+	stdout, stderr, exit := run(t, []string{"md2json"}, "\xFF")
+	wantStderr := "md2json: -:1:1: invalid utf-8 byte at offset 0\n"
 	if stdout != "" {
 		t.Errorf("stdout should be empty on hard error, got %q", stdout)
 	}
@@ -194,8 +194,8 @@ func TestLeadingInvalidUTF8StdinHardErrors(t *testing.T) {
 // offset of the first bad byte (8), line 2, column 6 (one past "world").
 func TestMidDocumentInvalidUTF8StdinHardErrors(t *testing.T) {
 	in := "hi\nworld\xC3\x28"
-	stdout, stderr, exit := run(t, []string{"md2json2"}, in)
-	wantStderr := "md2json2: -:2:6: invalid utf-8 byte at offset 8\n"
+	stdout, stderr, exit := run(t, []string{"md2json"}, in)
+	wantStderr := "md2json: -:2:6: invalid utf-8 byte at offset 8\n"
 	if stdout != "" {
 		t.Errorf("stdout should be empty on hard error, got %q", stdout)
 	}
@@ -215,8 +215,8 @@ func TestUnknownFlagExitsNonZero(t *testing.T) {
 		name string
 		argv []string
 	}{
-		{"--no-such-flag", []string{"md2json2", "--no-such-flag"}},
-		{"-z", []string{"md2json2", "-z"}},
+		{"--no-such-flag", []string{"md2json", "--no-such-flag"}},
+		{"-z", []string{"md2json", "-z"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -241,11 +241,11 @@ func TestPositionedErrorRoundsUnknownColumnUpToOne(t *testing.T) {
 		col  int
 		want string
 	}{
-		{"line-with-col", 5, 3, "md2json2: post.md:5:3: oops\n"},
+		{"line-with-col", 5, 3, "md2json: post.md:5:3: oops\n"},
 		// line known, col unknown → column rounds up to 1.
-		{"line-only-col-zero", 5, 0, "md2json2: post.md:5:1: oops\n"},
+		{"line-only-col-zero", 5, 0, "md2json: post.md:5:1: oops\n"},
 		// document-scoped no-position sentinel: both 0 → 0:0 preserved.
-		{"no-position-sentinel", 0, 0, "md2json2: post.md:0:0: oops\n"},
+		{"no-position-sentinel", 0, 0, "md2json: post.md:0:0: oops\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -274,19 +274,19 @@ type stubError string
 func (e stubError) Error() string { return string(e) }
 
 // S12 Test 6 (criterion #6): a document-scoped error (no line/column
-// information available) renders as `md2json2: <path>:0:0: <msg>` on stderr
+// information available) renders as `md2json: <path>:0:0: <msg>` on stderr
 // and exits 1. We exercise the path through an io.Writer that fails: emit
 // returns an error, cli's `writeDocScopedError` branch fires, and the stderr
 // line uses the `:0:0:` sentinel with the stdin path token `-`.
 func TestDocumentScopedErrorUsesZeroPositionSentinel(t *testing.T) {
 	var errBuf bytes.Buffer
 	inBuf := strings.NewReader("")
-	exit := Run([]string{"md2json2"}, inBuf, failingWriter{}, &errBuf)
+	exit := Run([]string{"md2json"}, inBuf, failingWriter{}, &errBuf)
 	if exit != 1 {
 		t.Errorf("exit code: got %d, want 1 (document-scoped error)", exit)
 	}
 	stderr := errBuf.String()
-	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)\n$`)
+	canonical := regexp.MustCompile(`^md2json: ([^:]+):(\d+):(\d+): (.+)\n$`)
 	m := canonical.FindStringSubmatch(stderr)
 	if m == nil {
 		t.Fatalf("stderr does not match canonical regex: %q", stderr)
@@ -304,27 +304,27 @@ func TestDocumentScopedErrorUsesZeroPositionSentinel(t *testing.T) {
 // S12 Test 5 (criterion #3): `-V` / `--version` writes a version string to
 // stdout, exit 0. Both forms produce identical output. The exact version
 // string is left to S13's release pipeline; this test only enforces shape
-// (contains `md2json2`, contains a digit, single line modulo trailing \n).
+// (contains `md2json`, contains a digit, single line modulo trailing \n).
 func TestVersionFlagPrintsVersion(t *testing.T) {
 	for _, flag := range []string{"-V", "--version"} {
 		t.Run(flag, func(t *testing.T) {
-			stdout, stderr, exit := run(t, []string{"md2json2", flag}, "")
+			stdout, stderr, exit := run(t, []string{"md2json", flag}, "")
 			if exit != 0 {
 				t.Errorf("exit code: got %d, want 0", exit)
 			}
 			if stderr != "" {
 				t.Errorf("stderr should be empty on %s, got %q", flag, stderr)
 			}
-			if !strings.Contains(stdout, "md2json2") {
-				t.Errorf("version output should contain `md2json2`, got %q", stdout)
+			if !strings.Contains(stdout, "md2json") {
+				t.Errorf("version output should contain `md2json`, got %q", stdout)
 			}
 			if !regexp.MustCompile(`\d`).MatchString(stdout) {
 				t.Errorf("version output should contain a digit, got %q", stdout)
 			}
 		})
 	}
-	stdoutShort, _, _ := run(t, []string{"md2json2", "-V"}, "")
-	stdoutLong, _, _ := run(t, []string{"md2json2", "--version"}, "")
+	stdoutShort, _, _ := run(t, []string{"md2json", "-V"}, "")
+	stdoutLong, _, _ := run(t, []string{"md2json", "--version"}, "")
 	if stdoutShort != stdoutLong {
 		t.Errorf("-V and --version produced different output:\n-V: %q\n--version: %q", stdoutShort, stdoutLong)
 	}
@@ -349,7 +349,7 @@ func TestHelpFlagPrintsUsageNamingEveryFlag(t *testing.T) {
 	}
 	for _, flag := range []string{"-h", "--help"} {
 		t.Run(flag, func(t *testing.T) {
-			stdout, stderr, exit := run(t, []string{"md2json2", flag}, "")
+			stdout, stderr, exit := run(t, []string{"md2json", flag}, "")
 			if exit != 0 {
 				t.Errorf("exit code: got %d, want 0", exit)
 			}
@@ -374,8 +374,8 @@ func TestHelpFlagPrintsUsageNamingEveryFlag(t *testing.T) {
 		})
 	}
 	// Both forms must agree byte-for-byte (one source of truth).
-	stdoutShort, _, _ := run(t, []string{"md2json2", "-h"}, "")
-	stdoutLong, _, _ := run(t, []string{"md2json2", "--help"}, "")
+	stdoutShort, _, _ := run(t, []string{"md2json", "-h"}, "")
+	stdoutLong, _, _ := run(t, []string{"md2json", "--help"}, "")
 	if stdoutShort != stdoutLong {
 		t.Errorf("-h and --help produced different output:\n-h: %q\n--help: %q", stdoutShort, stdoutLong)
 	}
@@ -393,9 +393,9 @@ func TestOutputFlagWritesEnvelopeToFile(t *testing.T) {
 		name string
 		mk   func(outPath string) []string
 	}{
-		{"short", func(p string) []string { return []string{"md2json2", "--no-position", "-o", p} }},
-		{"long", func(p string) []string { return []string{"md2json2", "--no-position", "--output", p} }},
-		{"long-equals", func(p string) []string { return []string{"md2json2", "--no-position", "--output=" + p} }},
+		{"short", func(p string) []string { return []string{"md2json", "--no-position", "-o", p} }},
+		{"long", func(p string) []string { return []string{"md2json", "--no-position", "--output", p} }},
+		{"long-equals", func(p string) []string { return []string{"md2json", "--no-position", "--output=" + p} }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -429,7 +429,7 @@ func TestOutputFlagTruncatesExistingFile(t *testing.T) {
 	if err := os.WriteFile(outPath, []byte("STALE BYTES THAT MUST BE REMOVED"), 0o644); err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
-	_, _, exit := run(t, []string{"md2json2", "--no-position", "-o", outPath}, "")
+	_, _, exit := run(t, []string{"md2json", "--no-position", "-o", outPath}, "")
 	if exit != 0 {
 		t.Errorf("exit code: got %d, want 0", exit)
 	}
@@ -444,25 +444,25 @@ func TestOutputFlagTruncatesExistingFile(t *testing.T) {
 
 // S12 Test 2 (criterion #5 + criterion #9 pre-input half): a missing /
 // unreadable FILE (error raised before any bytes are read) is a pre-input
-// usage error: `<path>` is the literal `md2json2`, position is `:0:0:`, exit
+// usage error: `<path>` is the literal `md2json`, position is `:0:0:`, exit
 // code is 2, stdout is empty.
 func TestMissingFilePreInputUsageError(t *testing.T) {
 	tmp := t.TempDir()
 	path := tmp + "/nope.md"
-	stdout, stderr, exit := run(t, []string{"md2json2", path}, "")
+	stdout, stderr, exit := run(t, []string{"md2json", path}, "")
 	if stdout != "" {
 		t.Errorf("stdout should be empty on usage error, got %q", stdout)
 	}
 	if exit != 2 {
 		t.Errorf("exit code: got %d, want 2", exit)
 	}
-	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)\n$`)
+	canonical := regexp.MustCompile(`^md2json: ([^:]+):(\d+):(\d+): (.+)\n$`)
 	m := canonical.FindStringSubmatch(stderr)
 	if m == nil {
 		t.Fatalf("stderr does not match canonical regex: %q", stderr)
 	}
-	if m[1] != "md2json2" {
-		t.Errorf("pre-input usage error <path> token: got %q, want %q", m[1], "md2json2")
+	if m[1] != "md2json" {
+		t.Errorf("pre-input usage error <path> token: got %q, want %q", m[1], "md2json")
 	}
 	if m[2] != "0" || m[3] != "0" {
 		t.Errorf("pre-input usage error position: got %s:%s, want 0:0", m[2], m[3])
@@ -471,11 +471,11 @@ func TestMissingFilePreInputUsageError(t *testing.T) {
 
 // S12 Test 1 (criterion #4 + criterion #9 pre-input half): an unknown flag is a
 // pre-input usage error. The stderr line uses the literal program name
-// `md2json2` as the `<path>` token and the `:0:0:` sentinel; exit code is 2
+// `md2json` as the `<path>` token and the `:0:0:` sentinel; exit code is 2
 // (usage error, distinct from 1 = document-scoped parse error). Stdout stays
 // empty so callers branching on `$?` don't see a stray byte.
 func TestUnknownFlagPreInputUsageError(t *testing.T) {
-	stdout, stderr, exit := run(t, []string{"md2json2", "--no-such-flag"}, "")
+	stdout, stderr, exit := run(t, []string{"md2json", "--no-such-flag"}, "")
 	if stdout != "" {
 		t.Errorf("stdout should be empty on usage error, got %q", stdout)
 	}
@@ -483,14 +483,14 @@ func TestUnknownFlagPreInputUsageError(t *testing.T) {
 		t.Errorf("exit code: got %d, want 2", exit)
 	}
 	// Stderr must be exactly one line matching the canonical regex with
-	// `<path>` = `md2json2` and position `0:0`.
-	canonical := regexp.MustCompile(`^md2json2: ([^:]+):(\d+):(\d+): (.+)\n$`)
+	// `<path>` = `md2json` and position `0:0`.
+	canonical := regexp.MustCompile(`^md2json: ([^:]+):(\d+):(\d+): (.+)\n$`)
 	m := canonical.FindStringSubmatch(stderr)
 	if m == nil {
 		t.Fatalf("stderr does not match canonical regex: %q", stderr)
 	}
-	if m[1] != "md2json2" {
-		t.Errorf("pre-input usage error <path> token: got %q, want %q", m[1], "md2json2")
+	if m[1] != "md2json" {
+		t.Errorf("pre-input usage error <path> token: got %q, want %q", m[1], "md2json")
 	}
 	if m[2] != "0" || m[3] != "0" {
 		t.Errorf("pre-input usage error position: got %s:%s, want 0:0", m[2], m[3])
@@ -512,12 +512,12 @@ func TestKnownFlagsRecognizedAsNoop(t *testing.T) {
 		name string
 		argv []string
 	}{
-		{"no-position", []string{"md2json2", "--no-position"}},
-		{"pretty", []string{"md2json2", "--pretty"}},
-		{"frontmatter-only", []string{"md2json2", "--frontmatter-only"}},
-		{"output-long-space", []string{"md2json2", "--output", outPath}},
-		{"output-long-equals", []string{"md2json2", "--output=" + outPath}},
-		{"output-short-space", []string{"md2json2", "-o", outPath}},
+		{"no-position", []string{"md2json", "--no-position"}},
+		{"pretty", []string{"md2json", "--pretty"}},
+		{"frontmatter-only", []string{"md2json", "--frontmatter-only"}},
+		{"output-long-space", []string{"md2json", "--output", outPath}},
+		{"output-long-equals", []string{"md2json", "--output=" + outPath}},
+		{"output-short-space", []string{"md2json", "-o", outPath}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
