@@ -624,13 +624,24 @@ func displayMathClosed(lines *textm.Segments, src []byte) bool {
 			// EOF after blank tail → unclosed.
 			return false
 		}
-		// Non-blank line. Closing fence? `$`-run of length >= 2 followed
-		// by whitespace-only tail.
+		// Non-blank line. Closing fence? Skip any leading ASCII spaces/tabs
+		// (the closing `$$` may be indented when the MathBlock is nested
+		// inside a listItem / blockquote — the library's block parser
+		// dedents the line stream before its `util.IndentWidth(line, 0) < 4`
+		// check fires at `probe/goldmark-mathjax/block.go:49`, but the
+		// src-tail bytes we inspect here are pre-dedent), then look for a
+		// `$`-run of length >= 2 followed by a whitespace-only tail. S06
+		// list-item fixture `- $$\n  x\n  $$\n` exercises this: the
+		// closer line in source is `  $$\n` — two-space-indented `$$`.
 		j := 0
-		for j < len(line) && line[j] == '$' {
+		for j < len(line) && (line[j] == ' ' || line[j] == '\t') {
 			j++
 		}
-		if j >= 2 && isAllASCIIWhitespace(line[j:]) {
+		k := j
+		for k < len(line) && line[k] == '$' {
+			k++
+		}
+		if k-j >= 2 && isAllASCIIWhitespace(line[k:]) {
 			return true
 		}
 		// Not a closing fence — unclosed.

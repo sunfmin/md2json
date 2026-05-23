@@ -1503,3 +1503,337 @@ func TestTranslateUnclosedInlineMathLibraryHandlesNoCompensation(t *testing.T) {
 		t.Errorf("paragraph.Children[0].Value: got %q, want %q (literal source bytes survive byte-for-byte)", c.Value, "prose $x = 5 still prose")
 	}
 }
+
+// S06 Test (issue 06 acceptance bullet #1, PRD fixture #9 list sub-fixture):
+// inline `$...$` inside a list item's paragraph composes as a child
+// `inlineMath` of that paragraph. Verification slice — exercises the
+// existing translateList → translateListItem → translateChildren path
+// against the S02 inline-math wiring; no new translate code is required
+// because mdast's list/listItem/paragraph wrappers nest naturally and
+// `translateChildren` already dispatches `*mathjax.InlineMath` via the
+// switch at translate.go:519.
+//
+// Predicate trace for input `- prose $x$ more\n`:
+//   - goldmark emits list{...}.listItem{...}.paragraph{children=[...]}
+//     where the paragraph children mirror what a top-level paragraph
+//     would emit for `prose $x$ more`: text "prose ", InlineMath{value:"x"},
+//     text " more".
+//   - The currency post-pass runs once per paragraph subtree and inspects
+//     each InlineMath; opener src[?+1]='x' PASS, closer src[?-1]='x' PASS,
+//     closer src[?+1]=' ' (non-digit) PASS → no demote.
+func TestTranslateInlineMathInsideListItemParagraph(t *testing.T) {
+	src := []byte("- prose $x$ more\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	list := root.Children[0]
+	if list.Type != "list" {
+		t.Fatalf("root.Children[0].Type: got %q, want %q", list.Type, "list")
+	}
+	if len(list.Children) != 1 {
+		t.Fatalf("list.Children: got %d, want 1", len(list.Children))
+	}
+	li := list.Children[0]
+	if li.Type != "listItem" {
+		t.Fatalf("list.Children[0].Type: got %q, want %q", li.Type, "listItem")
+	}
+	if len(li.Children) != 1 {
+		t.Fatalf("listItem.Children: got %d, want 1 (one paragraph)", len(li.Children))
+	}
+	p := li.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("listItem.Children[0].Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 3 {
+		t.Fatalf("paragraph.Children: got %d, want 3 (text, inlineMath, text); got %+v", len(p.Children), p.Children)
+	}
+	wantTypes := []string{"text", "inlineMath", "text"}
+	wantValues := []string{"prose ", "x", " more"}
+	for i := range wantTypes {
+		c := p.Children[i]
+		if c.Type != wantTypes[i] {
+			t.Errorf("paragraph.Children[%d].Type: got %q, want %q", i, c.Type, wantTypes[i])
+		}
+		if c.Value != wantValues[i] {
+			t.Errorf("paragraph.Children[%d].Value: got %q, want %q", i, c.Value, wantValues[i])
+		}
+	}
+}
+
+// S06 Test (issue 06 acceptance bullet #4, PRD fixture #10a): a
+// list-item containing a display `$$...$$` block produces a listItem
+// whose direct child is a `math{value:"x\n", meta:null}` node. The
+// library's block parser fires at the (dedented) `$$` line inside the
+// list-item's lazy-continuation context. No translate compensation
+// required for this shape — the closed-fence predicate finds the closing
+// `$$` line past the body, so S05's `displayMathClosed` returns true
+// and the normal `math`-node emit path runs.
+//
+// Input (8-line shape per PRD #10a): `- $$\n  x\n  $$\n` — list bullet
+// `- ` followed by `$$` on the first line, indented body `  x`, indented
+// closing `  $$`. The two-space indent makes the body and closer
+// continuations of the list item rather than new top-level blocks; the
+// library dedents and feeds `$$\nx\n$$\n` to its block parser inside
+// the listItem context.
+func TestTranslateDisplayMathInsideListItem(t *testing.T) {
+	src := []byte("- $$\n  x\n  $$\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1; got %+v", len(root.Children), root.Children)
+	}
+	list := root.Children[0]
+	if list.Type != "list" {
+		t.Fatalf("root.Children[0].Type: got %q, want %q", list.Type, "list")
+	}
+	if len(list.Children) != 1 {
+		t.Fatalf("list.Children: got %d, want 1", len(list.Children))
+	}
+	li := list.Children[0]
+	if li.Type != "listItem" {
+		t.Fatalf("list.Children[0].Type: got %q, want %q", li.Type, "listItem")
+	}
+	if len(li.Children) != 1 {
+		t.Fatalf("listItem.Children: got %d, want 1 (one math block); got %+v", len(li.Children), li.Children)
+	}
+	m := li.Children[0]
+	if m.Type != "math" {
+		t.Fatalf("listItem.Children[0].Type: got %q, want %q ($$ at list-item line-start matches as math; not paragraph)", m.Type, "math")
+	}
+	if m.Value != "x\n" {
+		t.Errorf("math.Value: got %q, want %q (body bytes preserved, trailing LF included)", m.Value, "x\n")
+	}
+	if m.Meta != nil {
+		t.Errorf("math.Meta: got *%q, want nil (meta is null for $$...$$ per CONTEXT.md `math node`)", *m.Meta)
+	}
+}
+
+// S06 Test (issue 06 acceptance bullet #5, PRD fixture #11): a GFM
+// table cell whose content is `$$x$$` produces an `inlineMath{value:"x"}`
+// child — NOT a block `math` node and NOT a literal text `$$x$$`. GFM
+// table cells are inline-content-only by spec; the library's BLOCK
+// parser does not fire inside cells. The library's INLINE parser does
+// fire on `$$...$$` runs (opener-count loop at
+// `probe/goldmark-mathjax/inline.go:26-28` counts the `$` run, then
+// `inline.go:38-52` scans for a matching `$$` closer), producing
+// `*mathjax.InlineMath` whose interior bytes are `x`.
+//
+// Currency post-pass survival (the load-bearing predicate per PRD
+// fixture #11 derivation):
+//   - (i)  opener-followed-by-non-whitespace: cell content is `$$x$$`;
+//          src[opener_pos+1] is the SECOND `$`. `$` is not whitespace → PASS.
+//   - (ii) closer-preceded-by-non-whitespace: src[closer_pos-1] = `x` → PASS.
+//   - (iii) closer-not-followed-by-digit: src[closer_pos+1] is the
+//          SECOND closing `$` (non-digit) → PASS.
+//   No predicate failure → no demote. Zero `math` nodes; one
+//   `inlineMath` child inside the cell.
+func TestTranslateInlineMathInsideTableCellMatchesAsInlineMath(t *testing.T) {
+	src := []byte("| a |\n| --- |\n| $$x$$ |\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1 (one table)", len(root.Children))
+	}
+	tbl := root.Children[0]
+	if tbl.Type != "table" {
+		t.Fatalf("root.Children[0].Type: got %q, want %q", tbl.Type, "table")
+	}
+	// Header row + one data row → 2 tableRow children.
+	if len(tbl.Children) != 2 {
+		t.Fatalf("table.Children: got %d, want 2 (header + 1 data row)", len(tbl.Children))
+	}
+	dataRow := tbl.Children[1]
+	if dataRow.Type != "tableRow" {
+		t.Fatalf("table.Children[1].Type: got %q, want %q", dataRow.Type, "tableRow")
+	}
+	if len(dataRow.Children) != 1 {
+		t.Fatalf("dataRow.Children: got %d, want 1 (single cell)", len(dataRow.Children))
+	}
+	cell := dataRow.Children[0]
+	if cell.Type != "tableCell" {
+		t.Fatalf("dataRow.Children[0].Type: got %q, want %q", cell.Type, "tableCell")
+	}
+	if len(cell.Children) != 1 {
+		t.Fatalf("tableCell.Children: got %d, want 1 (one inlineMath); got %+v", len(cell.Children), cell.Children)
+	}
+	im := cell.Children[0]
+	if im.Type != "inlineMath" {
+		t.Errorf("tableCell.Children[0].Type: got %q, want %q ($$x$$ inside a cell falls to the inline matcher with opener=2; per PRD fixture #11 derivation)", im.Type, "inlineMath")
+	}
+	if im.Value != "x" {
+		t.Errorf("inlineMath.Value: got %q, want %q (interior bytes between matched $$ runs)", im.Value, "x")
+	}
+	// Sanity guard: zero `math` nodes anywhere under the table.
+	assertNoMathNodeAnywhere(t, tbl)
+}
+
+func assertNoMathNodeAnywhere(t *testing.T, n *Node) {
+	t.Helper()
+	if n == nil {
+		return
+	}
+	if n.Type == "math" {
+		t.Errorf("found unexpected math node under table (GFM cells are inline-only; block parser must not fire)")
+	}
+	for _, c := range n.Children {
+		assertNoMathNodeAnywhere(t, c)
+	}
+}
+
+// S06 Test (issue 06 acceptance bullet #6, PRD fixture #10b): a
+// four-space-indented `$$x$$` line at document root parses as an
+// indented code block per CommonMark — NOT as math. The library's
+// block parser declines via its `CanAcceptIndentedLine() → false`
+// contract (verified in the probe clone), so the indented-code-block
+// rule wins by priority. Verification slice — no translate code change;
+// pins the natural consequence of block-parser priority and ensures
+// math doesn't shadow indented code.
+//
+// Expected output: one `code` child with `lang:nil`, `meta:nil`,
+// `value:"$$x$$\n"` (indented code preserves the trailing LF per the
+// `code.value` rule from CONTEXT.md "Text/Code value preservation",
+// already exercised by S06's TestTranslateIndentedCodeBlockHasNilLangAndMeta).
+func TestTranslateIndentedDollarDollarFallsToIndentedCode(t *testing.T) {
+	src := []byte("    $$x$$\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1; got %+v", len(root.Children), root.Children)
+	}
+	c := root.Children[0]
+	if c.Type != "code" {
+		t.Fatalf("root.Children[0].Type: got %q, want %q (4-space-indented $$x$$ is indented code per CommonMark; library declines via CanAcceptIndentedLine=false)", c.Type, "code")
+	}
+	if c.Lang != nil {
+		t.Errorf("code.Lang: got *%q, want nil (indented code has no info string)", *c.Lang)
+	}
+	if c.Meta != nil {
+		t.Errorf("code.Meta: got *%q, want nil (indented code has no meta)", *c.Meta)
+	}
+	if c.Value != "$$x$$\n" {
+		t.Errorf("code.Value: got %q, want %q (dedented bytes, trailing LF preserved per code.value rule)", c.Value, "$$x$$\n")
+	}
+}
+
+// S06 Test (issue 06 acceptance bullet #3, PRD fixture #9 footnote
+// sub-fixture): inline `$...$` inside a footnoteDefinition's body
+// paragraph composes as a child `inlineMath`. Verification slice — same
+// shape as list/blockquote; exercises translateFootnote → translateChildren
+// over the existing S02 inline-math wiring. No new code required.
+//
+// **TDD-time adaptation, documented in tdd-log.md (S06).** The
+// acceptance bullet's literal input `[^1]: prose $x$ more\n` (orphan
+// definition with no reference) does NOT produce a footnoteDefinition
+// in the goldmark AST — verified against the in-tree footnote extension:
+// goldmark drops unreferenced footnote definitions entirely (no
+// `*east.FootnoteList` is appended to the document). To exercise the
+// same intent (in-block composition of inline math inside a
+// footnoteDefinition's body paragraph) we add a one-byte reference
+// prefix `a[^1]\n\n` so the footnote survives goldmark's reachability
+// pass. The composition shape under test — `paragraph.children =
+// [text "prose ", inlineMath{value:"x"}, text " more"]` inside the
+// footnoteDefinition — is byte-identical to the issue bullet's intent;
+// only the orphan-shaped trigger input is replaced. S08
+// FootnoteReferenceAndDefinition uses the same `a[^a]\n\n[^a]: footnote
+// body` pattern for the same reason.
+func TestTranslateInlineMathInsideFootnoteDefinitionParagraph(t *testing.T) {
+	src := []byte("a[^1]\n\n[^1]: prose $x$ more\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 2 {
+		t.Fatalf("root.Children: got %d, want 2 (paragraph holding the reference + footnoteDefinition sibling); got %+v", len(root.Children), root.Children)
+	}
+	fn := root.Children[1]
+	if fn.Type != "footnoteDefinition" {
+		t.Fatalf("root.Children[1].Type: got %q, want %q", fn.Type, "footnoteDefinition")
+	}
+	if fn.Identifier != "1" {
+		t.Errorf("footnoteDefinition.Identifier: got %q, want %q", fn.Identifier, "1")
+	}
+	if len(fn.Children) != 1 {
+		t.Fatalf("footnoteDefinition.Children: got %d, want 1 (one paragraph body)", len(fn.Children))
+	}
+	p := fn.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("footnoteDefinition.Children[0].Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 3 {
+		t.Fatalf("paragraph.Children: got %d, want 3 (text, inlineMath, text); got %+v", len(p.Children), p.Children)
+	}
+	wantTypes := []string{"text", "inlineMath", "text"}
+	wantValues := []string{"prose ", "x", " more"}
+	for i := range wantTypes {
+		c := p.Children[i]
+		if c.Type != wantTypes[i] {
+			t.Errorf("paragraph.Children[%d].Type: got %q, want %q", i, c.Type, wantTypes[i])
+		}
+		if c.Value != wantValues[i] {
+			t.Errorf("paragraph.Children[%d].Value: got %q, want %q", i, c.Value, wantValues[i])
+		}
+	}
+}
+
+// S06 Test (issue 06 acceptance bullet #2, PRD fixture #9 blockquote
+// sub-fixture): inline `$...$` inside a blockquote's paragraph composes
+// as a child `inlineMath`. Verification slice — same shape as the list
+// case, exercising translateBlockquote → translateChildren over the
+// existing S02 inline-math wiring. No new code required.
+func TestTranslateInlineMathInsideBlockquoteParagraph(t *testing.T) {
+	src := []byte("> prose $x$ more\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	bq := root.Children[0]
+	if bq.Type != "blockquote" {
+		t.Fatalf("root.Children[0].Type: got %q, want %q", bq.Type, "blockquote")
+	}
+	if len(bq.Children) != 1 {
+		t.Fatalf("blockquote.Children: got %d, want 1 (one paragraph)", len(bq.Children))
+	}
+	p := bq.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("blockquote.Children[0].Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 3 {
+		t.Fatalf("paragraph.Children: got %d, want 3 (text, inlineMath, text); got %+v", len(p.Children), p.Children)
+	}
+	wantTypes := []string{"text", "inlineMath", "text"}
+	wantValues := []string{"prose ", "x", " more"}
+	for i := range wantTypes {
+		c := p.Children[i]
+		if c.Type != wantTypes[i] {
+			t.Errorf("paragraph.Children[%d].Type: got %q, want %q", i, c.Type, wantTypes[i])
+		}
+		if c.Value != wantValues[i] {
+			t.Errorf("paragraph.Children[%d].Value: got %q, want %q", i, c.Value, wantValues[i])
+		}
+	}
+}
