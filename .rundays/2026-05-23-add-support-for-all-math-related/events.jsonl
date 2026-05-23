@@ -82,3 +82,5 @@
 {"t":"2026-05-23T16:53:38Z","ev":"queue-advance","prev":"06-in-block-composition","next":"07-mismatched-braces-and-value-preservation"}
 {"t":"2026-05-23T16:53:44Z","ev":"cycle-commit","result":"committed","sha":"c3cd02e","stage":"mini-arch","verdict":"accept"}
 {"t":"2026-05-23T17:01:24Z","ev":"agent-return","role":"proposer-tdd","stage":"tdd","issue":"07-mismatched-braces-and-value-preservation","verdict":"accept","note":"last-tdd-issue-all-14-fixtures-pinned"}
+{"t":"2026-05-23T17:01:28Z","ev":"cycle-commit","result":"committed","sha":"32884fa","stage":"tdd","verdict":"accept"}
+{"t":"2026-05-23T17:04:12Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","issue":"07-mismatched-braces-and-value-preservation","verdict":"accept","note":"survey-only-deferred-to-final-arch"}

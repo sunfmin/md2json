@@ -3,16 +3,17 @@
   "idea_path": "/Users/sunfmin/Developments/md2json/.rundays/2026-05-23-add-support-for-all-math-related/IDEA.md",
   "product_dir": "/Users/sunfmin/Developments/md2json",
   "started_at": "2026-05-23T14:17:58Z",
-  "current_stage": "tdd",
+  "current_stage": "mini-arch",
   "stage_context": {
     "round": 0,
     "transcript_path": null,
     "redo_count": 0,
-    "issue_slug": "07-mismatched-braces-and-value-preservation"
+    "issue_slug": "07-mismatched-braces-and-value-preservation",
+    "scope": "mini"
   },
   "queue": {
     "issues_total": 7,
-    "issues_done": 6,
+    "issues_done": 7,
     "max_issues": 50,
     "current_issue": "07-mismatched-braces-and-value-preservation"
   },
