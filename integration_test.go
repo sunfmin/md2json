@@ -28,6 +28,17 @@ import (
 
 var binaryPath string
 
+// v1ShipCriterionEnvelope is the canonical stdout for the **v1 ship criterion**
+// (CONTEXT.md): `md2json2 --no-position < empty.md` emits exactly this single
+// JSON document and exits 0. Pinned as a file-scope constant so the two tests
+// that consume it (`TestGoInstallProducesBinaryPassingShipCriterion` here and
+// `TestReleaseWorkflowSmokeTestRunsShipCriterion` in release_workflow_test.go)
+// share one source of truth, and a reader who greps the glossary term lands
+// on this name. The third instance (the `diff` inside .github/workflows/
+// release.yml) is intrinsically out-of-language but is anchored to this name
+// for cross-reference.
+const v1ShipCriterionEnvelope = `{"frontmatter":null,"ast":{"type":"root","children":[]}}`
+
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "md2json2-bin-")
 	if err != nil {
@@ -438,15 +449,14 @@ func TestGoInstallProducesBinaryPassingShipCriterion(t *testing.T) {
 		}
 		exit = exitErr.ExitCode()
 	}
-	const wantEnvelope = `{"frontmatter":null,"ast":{"type":"root","children":[]}}`
 	if exit != 0 {
 		t.Errorf("installed binary exit code: got %d, want 0; stderr=%q", exit, errBuf.String())
 	}
 	if errBuf.Len() != 0 {
 		t.Errorf("installed binary stderr should be empty, got %q", errBuf.String())
 	}
-	if got := outBuf.String(); got != wantEnvelope {
-		t.Errorf("installed binary stdout mismatch\n  got:  %q\n  want: %q", got, wantEnvelope)
+	if got := outBuf.String(); got != v1ShipCriterionEnvelope {
+		t.Errorf("installed binary stdout mismatch\n  got:  %q\n  want: %q", got, v1ShipCriterionEnvelope)
 	}
 }
 

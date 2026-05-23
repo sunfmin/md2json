@@ -61,18 +61,14 @@ import (
 // v1 non-goal list). Exposed so a consumer (or test) can inspect the
 // configured extension set if needed.
 func New() goldmark.Markdown {
-	return goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			extension.Footnote,
-			&frontmatter.Extender{
-				Formats: []frontmatter.Format{frontmatter.YAML},
-				// Mode is intentionally zero (default): we decode frontmatter
-				// manually via frontmatter.Get on the parser.Context so the
-				// final shape on the wire is owned by parse, not by goldmark's
-				// document metadata cache.
-			},
-		),
+	return newGoldmarkWith(
+		&frontmatter.Extender{
+			Formats: []frontmatter.Format{frontmatter.YAML},
+			// Mode is intentionally zero (default): we decode frontmatter
+			// manually via frontmatter.Get on the parser.Context so the
+			// final shape on the wire is owned by parse, not by goldmark's
+			// document metadata cache.
+		},
 	)
 }
 
@@ -82,12 +78,24 @@ func New() goldmark.Markdown {
 // CommonMark `ThematicBreak` (the body-only interpretation) rather than as
 // the opening of a greedy frontmatter consumer.
 func newWithoutFrontmatter() goldmark.Markdown {
-	return goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			extension.Footnote,
-		),
-	)
+	return newGoldmarkWith()
+}
+
+// newGoldmarkWith is the single source of truth for the v1 enabled extension
+// set MINUS the frontmatter-extender choice. The "base" set (GFM + Footnote)
+// is identical across the with-frontmatter and without-frontmatter code paths
+// — only the trailing frontmatter extender (present in `New`, absent in
+// `newWithoutFrontmatter`) varies. Concentrating the base set here means a
+// future change like "add `extension.DefinitionList` to v1" is one edit, not
+// two; the registration order (GFM → Footnote → caller-supplied extras) is
+// preserved so goldmark's extension-priority resolution sees the same input
+// both paths used to construct by hand. Addresses ADR-0002 §4's "no central
+// registry" maintainer-hazard note: the registry is now this function.
+func newGoldmarkWith(extras ...goldmark.Extender) goldmark.Markdown {
+	exts := make([]goldmark.Extender, 0, 2+len(extras))
+	exts = append(exts, extension.GFM, extension.Footnote)
+	exts = append(exts, extras...)
+	return goldmark.New(goldmark.WithExtensions(exts...))
 }
 
 // Result is the typed return of Parse: the goldmark document root plus the

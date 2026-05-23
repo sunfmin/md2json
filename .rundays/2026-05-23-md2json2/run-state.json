@@ -3,20 +3,20 @@
   "idea_path": "/Users/sunfmin/Developments/md2json2/IDEA.md",
   "product_dir": "/Users/sunfmin/Developments/md2json2",
   "started_at": "2026-05-23T05:02:40Z",
-  "current_stage": "tdd",
+  "current_stage": "final-arch",
   "stage_context": {
     "round": "0",
     "transcript_path": null,
     "redo_count": "0",
-    "issue_slug": "12-release-pipeline-and-go-install",
-    "scope": "mini",
+    "issue_slug": null,
+    "scope": "full",
     "variants_written": "0"
   },
   "queue": {
     "issues_total": 13,
-    "issues_done": 12,
+    "issues_done": 13,
     "max_issues": 50,
-    "current_issue": "12-release-pipeline-and-go-install"
+    "current_issue": null
   },
   "last_verdict": "accept",
   "rate_limit": {

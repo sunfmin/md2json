@@ -429,7 +429,7 @@ func TestReleaseWorkflowSmokeTestRunsShipCriterion(t *testing.T) {
 		}
 		runNode, _ := step["run"].(string)
 		if strings.Contains(runNode, "--no-position") &&
-			strings.Contains(runNode, `{"frontmatter":null,"ast":{"type":"root","children":[]}}`) {
+			strings.Contains(runNode, v1ShipCriterionEnvelope) {
 			smokeRun = runNode
 			break
 		}
