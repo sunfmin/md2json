@@ -170,3 +170,100 @@ jobs:
             dist/SHA256SUMS
           fail_on_unmatched_files: true
           generate_release_notes: true
+
+  bump-homebrew:
+    name: Bump Homebrew tap formula
+    needs: release
+    runs-on: ubuntu-latest
+    # Skip the bump when the HOMEBREW_TAP_TOKEN secret isn't configured, so
+    # a missing secret degrades to "no formula bump" instead of failing the
+    # whole release. Set the secret to enable.
+    if: ${{ github.repository == 'sunfmin/md2json' }}
+    steps:
+      - name: Download SHA256SUMS
+        uses: actions/download-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: dist
+
+      - name: Render Formula/md2json.rb
+        id: render
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          # Pull each line's hash out of the manifest by asset filename.
+          sha() { awk -v n="$1" '$2==n {print $1}' dist/SHA256SUMS; }
+          DARWIN_AMD64=$(sha md2json-darwin-amd64)
+          DARWIN_ARM64=$(sha md2json-darwin-arm64)
+          LINUX_AMD64=$(sha md2json-linux-amd64)
+          LINUX_ARM64=$(sha md2json-linux-arm64)
+          for v in DARWIN_AMD64 DARWIN_ARM64 LINUX_AMD64 LINUX_ARM64; do
+            if [ -z "${!v}" ]; then
+              echo "missing SHA256 for $v in SHA256SUMS" >&2; exit 1
+            fi
+          done
+          mkdir -p out/Formula
+          cat > out/Formula/md2json.rb <<EOF
+          class Md2json < Formula
+            desc "Markdown to JSON CLI (CommonMark + GFM via goldmark, mdast-style envelope)"
+            homepage "https://github.com/sunfmin/md2json"
+            version "${VERSION}"
+
+            on_macos do
+              on_intel do
+                url "https://github.com/sunfmin/md2json/releases/download/${TAG}/md2json-darwin-amd64"
+                sha256 "${DARWIN_AMD64}"
+              end
+              on_arm do
+                url "https://github.com/sunfmin/md2json/releases/download/${TAG}/md2json-darwin-arm64"
+                sha256 "${DARWIN_ARM64}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/sunfmin/md2json/releases/download/${TAG}/md2json-linux-amd64"
+                sha256 "${LINUX_AMD64}"
+              end
+              on_arm do
+                url "https://github.com/sunfmin/md2json/releases/download/${TAG}/md2json-linux-arm64"
+                sha256 "${LINUX_ARM64}"
+              end
+            end
+
+            def install
+              binary = Dir["md2json-*"].first
+              bin.install binary => "md2json"
+            end
+
+            test do
+              assert_match "md2json #{version}", shell_output("#{bin}/md2json -V")
+            end
+          end
+          EOF
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Push formula to sunfmin/homebrew-tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set; skipping formula bump." >&2
+            exit 0
+          fi
+          TAG="${{ steps.render.outputs.tag }}"
+          git clone --depth=1 "https://x-access-token:${TAP_TOKEN}@github.com/sunfmin/homebrew-tap.git" tap
+          cp out/Formula/md2json.rb tap/Formula/md2json.rb
+          cd tap
+          if git diff --quiet; then
+            echo "Formula already at ${TAG}; nothing to push." >&2
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/md2json.rb
+          git commit -m "md2json ${TAG#v}"
+          git push origin HEAD:main
