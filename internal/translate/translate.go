@@ -23,6 +23,15 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+// ASCII byte-class predicates used by the math compensation passes.
+// Cohesive group: `isASCIIWhitespace` + `isASCIIDigit` are the byte-level
+// primitives the remark-math currency-rule predicates inspect (S04
+// `currencyPostPass`); `isAllASCIIWhitespace` is the slice-level lift used
+// by the unclosed-`$$` predicate to recognize blank lines and the
+// closing-fence whitespace tail (S05 `displayMathClosed`). Co-located so
+// "every byte-class helper" is one block to scan, not three call-sites
+// apart.
+
 // isASCIIWhitespace reports whether b is one of the ASCII whitespace bytes
 // CommonMark treats as whitespace for the purposes of the remark-math
 // currency rule predicates. Space, tab, LF, CR, FF, VT — the standard
@@ -34,6 +43,19 @@ func isASCIIWhitespace(b byte) bool {
 // isASCIIDigit reports whether b is one of `0`..`9`.
 func isASCIIDigit(b byte) bool {
 	return b >= '0' && b <= '9'
+}
+
+// isAllASCIIWhitespace reports whether every byte in b is one of the
+// CommonMark ASCII whitespace set. Empty slice returns true (trivially
+// all-whitespace). Named (and not inlined) so the closing-fence predicate
+// reads as English at the call site.
+func isAllASCIIWhitespace(b []byte) bool {
+	for _, c := range b {
+		if !isASCIIWhitespace(c) {
+			return false
+		}
+	}
+	return true
 }
 
 // currencyPostPass walks the goldmark document and, for every
@@ -529,27 +551,15 @@ func translateNode(n ast.Node, src []byte, pt *positionTracker) *Node {
 // opening / closing fence lines lie outside it (CONTEXT.md "Position
 // info" treats fenced-block fences as out-of-span on the same precedent;
 // translate's fenced-code helper has shipped with this shape since S06).
-// For the unclosed-fence case (S05's scope, NOT S03's), the same
-// `blockOffsets` call naturally ends at the body's last LF since there
-// is no closer to include; S03's acceptance set is closed-fence-only,
-// so the issue's bullet #5 (position present by default, stripped under
-// `--no-position`) only requires shape-uniformity, not a specific
-// delimiter-inclusion choice.
+//
+// Closed-vs-unclosed branch (S05, ADR-0004 Decision 5): the library
+// emits a MathBlock regardless of whether the closing `$$` was actually
+// written, so `translateMath` first asks `displayMathClosed` and routes
+// the unclosed case to `demoteUnclosedDisplayMath` (paragraph emit).
+// Only the closed case reaches the `math`-node emit below; its position
+// math is described by the paragraph above.
 func translateMath(m *mathjax.MathBlock, src []byte, pt *positionTracker) *Node {
 	lines := m.Lines()
-	// Closed-vs-unclosed src-tail predicate (ADR-0004 Decision 5,
-	// PRD §Unclosed-fence behavior). The library emits a MathBlock
-	// regardless of whether the closing `$$` fence was actually seen
-	// (`probe/goldmark-mathjax/block_node.go:5-7` — MathBlock embeds
-	// BaseBlock and adds zero fields; the closing-fence branch at
-	// `block.go:49-57` returns parser.Close BEFORE appending the closer
-	// to Lines()). PRD fixture #14 (parse_test.go's
-	// TestParseUnclosedAndClosedDisplayMathHaveIdenticalLinesLastStop)
-	// pins this invariant behaviorally. So the closed-vs-unclosed
-	// decision MUST inspect source bytes AFTER `Lines().Last().Stop` —
-	// walk forward over LF/blank lines, look for a `$$+ whitespace-tail`
-	// closing-fence line; if found → closed (no compensation); if not
-	// (or EOF) → unclosed (demote to paragraph).
 	if !displayMathClosed(lines, src) {
 		return demoteUnclosedDisplayMath(m, src, pt)
 	}
@@ -628,19 +638,6 @@ func displayMathClosed(lines *textm.Segments, src []byte) bool {
 	}
 	// EOF reached with no non-blank line seen → unclosed.
 	return false
-}
-
-// isAllASCIIWhitespace reports whether every byte in b is one of the
-// CommonMark ASCII whitespace set. Empty slice returns true (trivially
-// all-whitespace). Named (and not inlined) so the closing-fence predicate
-// reads as English at the call site.
-func isAllASCIIWhitespace(b []byte) bool {
-	for _, c := range b {
-		if !isASCIIWhitespace(c) {
-			return false
-		}
-	}
-	return true
 }
 
 // demoteUnclosedDisplayMath emits the unclosed-`$$` compensation: a

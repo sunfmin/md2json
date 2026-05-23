@@ -72,3 +72,6 @@
 {"t":"2026-05-23T16:26:13Z","ev":"queue-advance","prev":"04-currency-rule-post-pass","next":"05-unclosed-display-math-compensation"}
 {"t":"2026-05-23T16:26:19Z","ev":"cycle-commit","result":"committed","sha":"ed10788","stage":"mini-arch","verdict":"accept"}
 {"t":"2026-05-23T16:36:52Z","ev":"agent-return","role":"proposer-tdd","stage":"tdd","issue":"05-unclosed-display-math-compensation","verdict":"accept","note":"library-contract-#14-verified"}
+{"t":"2026-05-23T16:36:56Z","ev":"cycle-commit","result":"committed","sha":"3e4dfa4","stage":"tdd","verdict":"accept"}
+{"t":"2026-05-23T16:40:26Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","issue":"05-unclosed-display-math-compensation","verdict":"accept"}
+{"t":"2026-05-23T16:40:29Z","ev":"queue-advance","prev":"05-unclosed-display-math-compensation","next":"06-in-block-composition"}
