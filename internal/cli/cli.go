@@ -41,10 +41,13 @@ Exit codes:
   2  usage error (bad flag, missing or unreadable FILE)
 `
 
-// versionText is the canonical -V / --version output. The version string
-// itself is a static placeholder for v1; the release pipeline (S13) will
-// stamp the real semver at build time.
-const versionText = "md2json2 v1.0.0\n"
+// versionLine renders the canonical -V / --version output by composing the
+// build-stamped `Version` package var (see version.go) into the line
+// `md2json2 <Version>\n`. Pulled out of a `const` so the release workflow's
+// `-ldflags "-X .../cli.Version=$TAG"` substitution takes effect at link
+// time without touching the rendering call site. S13 acceptance criterion #1
+// (the released binary's `-V` reflects the published tag).
+func versionLine() string { return "md2json2 " + Version + "\n" }
 
 // preInputPathToken is the `<path>` token used in the canonical stderr line
 // for any usage error raised BEFORE an input source has been determined —
@@ -158,7 +161,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if opts.version {
-		_, _ = io.WriteString(stdout, versionText)
+		_, _ = io.WriteString(stdout, versionLine())
 		return 0
 	}
 

@@ -72,3 +72,5 @@
 {"t":"2026-05-23T11:41:54Z","ev":"stage-transition","from":"tdd","to":"mini-arch","issue":"11-cli-flags-error-format-exit-codes"}
 {"t":"2026-05-23T12:29:52Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","verdict":"accept","issue":"11-cli-flags-error-format-exit-codes","scope":"mini"}
 {"t":"2026-05-23T12:30:01Z","ev":"stage-transition","from":"mini-arch","to":"tdd","issue":"12-release-pipeline-and-go-install"}
+{"t":"2026-05-23T12:30:11Z","ev":"cycle-commit","result":"committed","sha":"501aa5a","stage":"mini-arch","verdict":"accept","role":"proposer-arch","issue":"11-cli-flags-error-format-exit-codes"}
+{"t":"2026-05-23T12:40:57Z","ev":"agent-return","role":"proposer-tdd","stage":"tdd","verdict":"accept","issue":"12-release-pipeline-and-go-install"}

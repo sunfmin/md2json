@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -369,6 +370,83 @@ func TestCanonicalStderrRegexMatchesEveryFixture(t *testing.T) {
 	}
 	if totalLinesScanned == 0 {
 		t.Fatalf("no stderr lines were scanned across the fixture suite; the test is vacuous")
+	}
+}
+
+// TestGoInstallProducesBinaryPassingShipCriterion is S13 acceptance criterion
+// #1: `go install ./...` from a clean checkout produces an `md2json2` binary
+// on `PATH` that passes the v1 ship-criterion fixture.
+//
+// Strategy: install the current module into a throw-away GOBIN (no global
+// pollution, no network — `go install ./...` resolves the module by
+// directory, so the local checkout is what gets built), then invoke the
+// installed binary with `--no-position` and empty stdin and assert the byte-
+// exact v1 ship-criterion envelope and exit 0.
+//
+// This pins the install path that PRD US 31 / CONTEXT.md "Distribution"
+// describes ("Primary install: `go install github.com/<owner>/md2json2@latest`")
+// inside `go test`, so the install ergonomics are exercised on every CI run
+// without depending on a real `@latest` published tag.
+func TestGoInstallProducesBinaryPassingShipCriterion(t *testing.T) {
+	gobin := t.TempDir()
+
+	// Find the module root: integration_test.go lives at the module root, so
+	// the cwd when `go test` runs this file IS the module root. Pass `.` to
+	// install only the main package (the module exposes `./...` packages but
+	// only the root has a `main` package — installing the lot is equivalent).
+	moduleRoot, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	install := exec.Command("go", "install", "./...")
+	install.Dir = moduleRoot
+	install.Env = append(os.Environ(), "GOBIN="+gobin)
+	var installOut, installErr bytes.Buffer
+	install.Stdout = &installOut
+	install.Stderr = &installErr
+	if err := install.Run(); err != nil {
+		t.Fatalf("go install ./... failed: %v\nstdout: %s\nstderr: %s", err, installOut.String(), installErr.String())
+	}
+
+	// Locate the installed binary. On Windows the binary has a `.exe` suffix;
+	// elsewhere it's the bare program name. We do not currently run the test
+	// suite on Windows in CI (the release matrix cross-compiles for Windows),
+	// but supporting both keeps this test portable for local developers.
+	binName := "md2json2"
+	if runtime.GOOS == "windows" {
+		binName = "md2json2.exe"
+	}
+	installed := filepath.Join(gobin, binName)
+	if _, err := os.Stat(installed); err != nil {
+		t.Fatalf("installed binary not found at %s: %v\n(go install ./... stdout: %s, stderr: %s)",
+			installed, err, installOut.String(), installErr.String())
+	}
+
+	// Invoke the installed binary against the v1 ship-criterion (empty stdin
+	// under --no-position) and assert byte-exact stdout + exit 0.
+	cmd := exec.Command(installed, "--no-position")
+	cmd.Stdin = bytes.NewReader(nil)
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	runErr := cmd.Run()
+	exit := 0
+	if runErr != nil {
+		exitErr, ok := runErr.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("installed binary failed to run: %v", runErr)
+		}
+		exit = exitErr.ExitCode()
+	}
+	const wantEnvelope = `{"frontmatter":null,"ast":{"type":"root","children":[]}}`
+	if exit != 0 {
+		t.Errorf("installed binary exit code: got %d, want 0; stderr=%q", exit, errBuf.String())
+	}
+	if errBuf.Len() != 0 {
+		t.Errorf("installed binary stderr should be empty, got %q", errBuf.String())
+	}
+	if got := outBuf.String(); got != wantEnvelope {
+		t.Errorf("installed binary stdout mismatch\n  got:  %q\n  want: %q", got, wantEnvelope)
 	}
 }
 

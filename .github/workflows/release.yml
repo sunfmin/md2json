@@ -1,0 +1,172 @@
+# md2json2 release pipeline (S13).
+#
+# Triggered by a tag matching `v*`. Cross-compiles a statically-linked binary
+# for each of the five platforms pinned by the PRD's Distribution entry
+# (CONTEXT.md "Distribution" / PRD US 32): darwin/amd64, darwin/arm64,
+# linux/amd64, linux/arm64, windows/amd64. The build is `CGO_ENABLED=0`
+# with `-trimpath` and an ldflags stamp into
+# `github.com/sunfmin/md2json2/internal/cli.Version` so the published
+# binary's `-V` output matches the Release tag.
+#
+# Smoke test (acceptance criterion #5): linux/amd64 and darwin/arm64 matrix
+# entries run the v1 ship-criterion fixture against their freshly-built
+# binary before the release publishes. Cross-compiled targets (linux/arm64,
+# windows/amd64, darwin/amd64) are not smoke-tested in CI — the GitHub-
+# hosted runner set does not include a native exec host for them at the
+# free tier; the cross-compile itself is the artifact check.
+#
+# Checksum job (acceptance criterion #4): downloads every uploaded binary
+# artifact, runs `shasum -a 256` to produce `SHA256SUMS`, and attaches the
+# manifest alongside the binaries on the GitHub Release.
+#
+# Rationale + decisions pinned in docs/adr/0003-release-pipeline.md.
+
+name: release
+
+# YAML 1.1 quirk: `on:` unquoted parses as the boolean `true`. We quote it
+# explicitly so static parsers (and the release-workflow tests) see a string
+# key.
+"on":
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # required for softprops/action-gh-release to upload assets
+
+jobs:
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            ext: ""
+            smoke: true
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-latest
+            ext: ""
+            smoke: false
+          - goos: darwin
+            goarch: amd64
+            runner: macos-14
+            ext: ""
+            smoke: false
+          - goos: darwin
+            goarch: arm64
+            runner: macos-14
+            ext: ""
+            smoke: true
+          - goos: windows
+            goarch: amd64
+            runner: ubuntu-latest
+            ext: ".exe"
+            smoke: false
+    env:
+      CGO_ENABLED: 0
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build statically-linked binary
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          OUT="md2json2-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          # CGO_ENABLED=0 is set in the job env block; reaffirming via the
+          # command makes the static-link contract visible to a reader of
+          # the step alone. -trimpath strips host paths from the binary for
+          # reproducible builds; ldflags stamp the cli.Version package var
+          # so the published binary's `-V` matches the Release tag.
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags="-s -w -X github.com/sunfmin/md2json2/internal/cli.Version=${TAG}" \
+            -o "${OUT}" \
+            .
+          ls -la "${OUT}"
+          file "${OUT}" || true
+          echo "ASSET_NAME=${OUT}" >> "$GITHUB_ENV"
+
+      - name: Smoke test (v1 ship criterion)
+        if: matrix.smoke
+        run: |
+          # Acceptance criterion #5: run the v1 ship-criterion fixture
+          # against the freshly-built binary. The published artifact must
+          # produce the exact empty-document envelope on `--no-position`
+          # over empty stdin; mismatch fails the workflow.
+          GOT="$(printf '' | "./${ASSET_NAME}" --no-position)"
+          WANT='{"frontmatter":null,"ast":{"type":"root","children":[]}}'
+          if [ "$GOT" != "$WANT" ]; then
+            echo "v1 ship-criterion smoke test failed" >&2
+            echo "got:  $GOT" >&2
+            echo "want: $WANT" >&2
+            exit 1
+          fi
+          # Belt-and-braces: a `diff` comparison so the criterion-violating
+          # case is also visible as a structured diff in CI logs.
+          diff <(printf '%s' "$GOT") <(printf '%s' "$WANT")
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: md2json2-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: md2json2-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          if-no-files-found: error
+
+  checksums:
+    name: SHA256SUMS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          # `shasum -a 256` is the portable spelling — available on macOS
+          # and on Linux runners (provided by perl-base / coreutils-extras
+          # in ubuntu-latest's default image). Pinned in ADR-0003.
+          cd dist
+          shasum -a 256 md2json2-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload SHA256SUMS as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, checksums]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/md2json2-*
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true
