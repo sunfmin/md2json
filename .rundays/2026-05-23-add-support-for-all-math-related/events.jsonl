@@ -29,3 +29,5 @@
 {"t":"2026-05-23T15:11:40Z","ev":"agent-return","role":"proposer-prd","stage":"to-prd","verdict":"accept","note":"collapsed-to-branch-c-and-falsified-PO-edge-case"}
 {"t":"2026-05-23T15:11:45Z","ev":"cycle-commit","result":"committed","sha":"c881ede","stage":"to-prd","verdict":"accept"}
 {"t":"2026-05-23T15:16:51Z","ev":"agent-return","role":"critic","stage":"critique-prd","verdict":"continue","note":"round-3-post-triggered-grill"}
+{"t":"2026-05-23T15:16:55Z","ev":"cycle-commit","result":"committed","sha":"673c792","stage":"critique-prd","verdict":"continue"}
+{"t":"2026-05-23T15:24:10Z","ev":"agent-return","role":"proposer-prd","stage":"critique-prd","verdict":"continue","note":"round-3-revision"}
