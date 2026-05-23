@@ -16,7 +16,7 @@
     "max_issues": 50,
     "current_issue": null
   },
-  "last_verdict": "continue",
+  "last_verdict": "accept",
   "rate_limit": {
     "consecutive_limited_wakes": 0,
     "last_hit_at": null

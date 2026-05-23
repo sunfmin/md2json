@@ -99,3 +99,21 @@ Critic's remaining Round-2 defects (Fixture #5 soft-break shape, `translate` unc
 Using terms `translate-layer currency post-pass`, `currency-rule demote-only`, `$5 and $x$ divergence fixture` — implementation-detail vocabulary, not on the wire, belongs in ADR-0004 and PRD §Implementation Decisions, **not** in `<product_dir>/CONTEXT.md`. Same posture as `ast.InlineMath`/`ast.Math` per grill-0 Round 2 PO direction.
 
 ### VERDICT: continue
+
+## Round 2
+
+### Interviewer
+
+Branch (c) lands. Flagged term resolved.
+
+- `remark-math currency rule` vocab drift: closed. CONTEXT.md entry's closing guard sentence updated inline per PO Round 1 verbatim — "translate-compensation responsibility" replaces "extension-pick blocker, not a rule reopen." Same load-bearing posture (three predicates still decide wire `inlineMath` membership), different layer (translate post-pass, not library-internal). Three predicate checks themselves stay verbatim — those are the spec the wire output is measured against; PO did not reopen them.
+- Library pick: `github.com/litao91/goldmark-mathjax` stands. No ADR-0004 reopen on library identity. ADR-0004 Decision 3's "byte-identically" claim is the falsified surface; PO authorized `to-prd` author to rewrite that decision to name the translate-layer post-pass route (downstream artifact edit, not CONTEXT.md vocab).
+- Implementation-detail vocabulary (`translate-layer currency post-pass`, `currency-rule demote-only`, `$5 and $x$ divergence fixture`) stays out of CONTEXT.md per PO line-99 direction. Belongs in PRD §Implementation Decisions and ADR-0004, same posture as `ast.InlineMath`/`ast.Math` from grill-0 Round 2.
+- Five downstream artifact edits PO authorized (CONTEXT.md guard sentence [now applied], ADR-0004 Decision 3 rewrite, PRD §Open-Questions resolution, PRD fixture #3 target shape, PRD-added `$5 and $x$` divergence fixture) are `to-prd` Stage work, not this triggered-grill's scope.
+
+`return_stage=to-prd` ready to resume. PRD/ADR authors apply the four remaining artifact edits and continue critic ↔ proposer on the non-flagged Round-2 defects (Fixture #5 soft-break shape, `translate` unclosed-`$$` predicate, fixture #3/#4, fixture #8 verification).
+
+### PO
+<left empty — next Cycle's PO fills>
+
+### VERDICT: accept
