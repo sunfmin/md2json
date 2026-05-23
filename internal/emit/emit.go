@@ -180,6 +180,13 @@ func writeNode(buf *bytes.Buffer, n *translate.Node, opts Options) {
 		// inlineCode is a leaf carrying only `value`. mdast key order: value.
 		buf.WriteString(`,"value":`)
 		writeJSONString(buf, n.Value)
+	case "inlineMath":
+		// inlineMath is a leaf carrying only `value` (v1.x math Run; ADR-0004
+		// Decision 4; CONTEXT.md `inlineMath node` entry). mdast key order:
+		// value. The wire shape is `{type, value, position}` — no `meta`, no
+		// `data`, no `children`.
+		buf.WriteString(`,"value":`)
+		writeJSONString(buf, n.Value)
 	case "html":
 		// html is a leaf carrying only `value`. Block and inline raw HTML
 		// both serialize through this case — mdast does not distinguish.
@@ -292,7 +299,7 @@ func writeNode(buf *bytes.Buffer, n *translate.Node, opts Options) {
 // tree.
 func isContainer(t string) bool {
 	switch t {
-	case "text", "inlineCode", "code", "html", "image", "thematicBreak", "break",
+	case "text", "inlineCode", "inlineMath", "code", "html", "image", "thematicBreak", "break",
 		"imageReference", "definition", "footnoteReference":
 		// imageReference is a leaf (alt is a flat string, same as image);
 		// definition has no children (it carries url/title scalar fields);

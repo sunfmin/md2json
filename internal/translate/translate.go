@@ -16,6 +16,7 @@
 package translate
 
 import (
+	mathjax "github.com/litao91/goldmark-mathjax"
 	"github.com/yuin/goldmark/ast"
 	east "github.com/yuin/goldmark/extension/ast"
 	textm "github.com/yuin/goldmark/text"
@@ -326,8 +327,70 @@ func translateNode(n ast.Node, src []byte, pt *positionTracker) *Node {
 		return translateStrikethrough(v, src, pt)
 	case *east.FootnoteLink:
 		return translateFootnoteLink(v, pt)
+	case *mathjax.InlineMath:
+		return translateInlineMath(v, src, pt)
 	default:
 		return nil
+	}
+}
+
+// translateInlineMath maps `*mathjax.InlineMath` → mdast
+// `inlineMath{value, position}` per ADR-0004 Decision 4 (1:1 name alignment
+// between goldmark-side `*mathjax.InlineMath` and mdast `inlineMath`).
+//
+// `value` is the literal interior bytes between the `$` delimiters — the
+// concatenation of the InlineMath's child `*ast.Text` segments, taken
+// verbatim per CONTEXT.md "Text/Code value preservation" and the
+// `inlineMath node` entry ("byte-for-byte, delimiters stripped"). The
+// library's inline parser stores the interior bytes as a single
+// `*ast.RawTextSegment` child whose segment covers the interior of the
+// `$...$` range (post any trim-halfspace, see `inline.go:62-82` — for the
+// happy-path inputs covered by S02 the trim does not fire because no
+// fixture's interior begins AND ends with a space).
+//
+// Position spans the full source bytes including the opener and closer
+// `$` delimiters: we walk leftward from the first child's `Segment.Start`
+// across the run of `$` opener bytes, and rightward from the last child's
+// `Segment.Stop` across the run of `$` closer bytes. The library does NOT
+// expose the opener/closer width on the AST node itself, but the source
+// bytes immediately bracketing the children's span are `$` runs by
+// construction (per `inline.go:24-52`: the inline parser only fires on
+// `$`-runs, so the bytes adjacent to the interior segment MUST be `$`s
+// of equal length).
+func translateInlineMath(im *mathjax.InlineMath, src []byte, pt *positionTracker) *Node {
+	var value string
+	first := im.FirstChild()
+	last := im.LastChild()
+	for c := first; c != nil; c = c.NextSibling() {
+		t, ok := c.(*ast.Text)
+		if !ok {
+			continue
+		}
+		seg := t.Segment
+		value += string(src[seg.Start:seg.Stop])
+	}
+	startOff, endOff := 0, 0
+	if first != nil {
+		if t, ok := first.(*ast.Text); ok {
+			startOff = t.Segment.Start
+			for startOff > 0 && src[startOff-1] == '$' {
+				startOff--
+			}
+		}
+	}
+	if last != nil {
+		if t, ok := last.(*ast.Text); ok {
+			endOff = t.Segment.Stop
+			for endOff < len(src) && src[endOff] == '$' {
+				endOff++
+			}
+		}
+	}
+	return &Node{
+		Type:         "inlineMath",
+		Value:        value,
+		ValuePresent: true,
+		Position:     pt.position(startOff, endOff),
 	}
 }
 

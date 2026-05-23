@@ -54,3 +54,5 @@
 {"t":"2026-05-23T15:48:45Z","ev":"cycle-commit","result":"committed","sha":"7223f5c","stage":"tdd","verdict":"accept"}
 {"t":"2026-05-23T15:50:41Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","issue":"01-wire-math-extension","verdict":"accept","note":"no-strong-candidates"}
 {"t":"2026-05-23T15:50:59Z","ev":"queue-advance","prev":"01-wire-math-extension","next":"02-inline-math-happy-path"}
+{"t":"2026-05-23T15:51:05Z","ev":"cycle-commit","result":"committed","sha":"b7d09ff","stage":"mini-arch","verdict":"accept"}
+{"t":"2026-05-23T15:58:34Z","ev":"agent-return","role":"proposer-tdd","stage":"tdd","issue":"02-inline-math-happy-path","verdict":"accept","note":"library-trim-halfspace-quirk-flagged-in-tdd-log"}
