@@ -23,6 +23,155 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
+// isASCIIWhitespace reports whether b is one of the ASCII whitespace bytes
+// CommonMark treats as whitespace for the purposes of the remark-math
+// currency rule predicates. Space, tab, LF, CR, FF, VT — the standard
+// CommonMark whitespace set.
+func isASCIIWhitespace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == '\f' || b == '\v'
+}
+
+// isASCIIDigit reports whether b is one of `0`..`9`.
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
+}
+
+// currencyPostPass walks the goldmark document and, for every
+// `*mathjax.InlineMath` it finds, re-applies the three remark-math currency
+// predicates against the original source bytes (CONTEXT.md `remark-math
+// currency rule`; PRD §Implementation Decisions sub-point 2; ADR-0004
+// Decision 3). On any predicate FAILURE the post-pass replaces the
+// `*mathjax.InlineMath` node with an `*ast.Text` whose `Segment` covers the
+// full original `$...$` range (opening `$`, interior bytes, closing `$` all
+// included). The library's inline parser at
+// `probe/goldmark-mathjax/inline.go:24-52` matches purely by `$`-run-length
+// equality and does NOT check the predicates; translate enforces them one
+// layer up.
+//
+// The three predicates (verbatim CONTEXT.md `remark-math currency rule`):
+//   - (i)   opener-followed-by-non-whitespace: src[opener_pos+1] non-whitespace.
+//   - (ii)  closer-preceded-by-non-whitespace: src[closer_pos-1] non-whitespace.
+//   - (iii) closer-not-followed-by-digit: src[closer_pos+1] is EOF or non-digit.
+//
+// Opener / closer position derivation: the library stores the interior of
+// the `$...$` match as one or more child `*ast.Text` segments on the
+// InlineMath node. The `$`-run delimiters are NOT inside the children's
+// segments — they were consumed by the inline parser before any child was
+// appended. So we recover the delimiter positions by walking left from the
+// first child's `Segment.Start` across the leading `$` run and right from
+// the last child's `Segment.Stop` across the trailing `$` run. This is the
+// same recovery `translateInlineMath` uses to compute the position span.
+// For the (asymmetric) trim-halfspace case (`inline.go:62-82`) where one
+// side trimmed a space, the walk-leftward still lands on the opening `$`
+// run because the bytes immediately before the (post-trim) first child
+// are " $...". The opener_pos+1 byte is then the trimmed-away space, which
+// (correctly) fails predicate (i) — exactly the divergence shape pinned by
+// PRD fixture #4b.
+//
+// Demote-only — per ADR-0004 Decision 3, the post-pass NEVER re-promotes
+// and NEVER re-scans the demoted range for an inner valid `$...$`. This is
+// the load-bearing semantic difference vs. pure remark-math (which would
+// recursive-rescan). Convergence and divergence traces are pinned by PRD
+// fixtures #4a / #4b respectively. The library's `$$...$$` block math
+// matches map to `*mathjax.MathBlock` and are NOT touched by this pass —
+// the predicates apply to inline math only (CONTEXT.md: "Display `$$...$$`
+// has no such guard").
+//
+// Coalescing of adjacent text siblings after demote is handled by the
+// existing offset-contiguity check at `translateChildren`
+// (translate.go:226-232); no new coalescing code is introduced here.
+func currencyPostPass(n ast.Node, src []byte) {
+	// Walk children, collecting *mathjax.InlineMath nodes to potentially
+	// demote. We can't mutate-during-iterate (replacing a child mid-walk
+	// shifts the sibling pointers); collect first, then act.
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		// Recurse into every node — inline math can live inside any inline
+		// container (emphasis, strong, link, table cell, blockquote, list
+		// item, footnote, etc.). The recursion is bounded by the AST's
+		// tree shape; no cycles.
+		currencyPostPass(c, src)
+	}
+	// Second pass: examine direct children and demote predicate-failing
+	// InlineMath. Two-pass ordering guarantees we don't visit a node that
+	// was replaced mid-iteration.
+	var toDemote []*mathjax.InlineMath
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		im, ok := c.(*mathjax.InlineMath)
+		if !ok {
+			continue
+		}
+		if !currencyPredicatesPass(im, src) {
+			toDemote = append(toDemote, im)
+		}
+	}
+	for _, im := range toDemote {
+		startOff, endOff := inlineMathSpan(im, src)
+		repl := ast.NewTextSegment(textm.NewSegment(startOff, endOff))
+		n.ReplaceChild(n, im, repl)
+	}
+}
+
+// currencyPredicatesPass returns true iff all three remark-math currency
+// predicates pass for the given InlineMath node against the source bytes.
+// A return value of false means the node should be demoted to text.
+func currencyPredicatesPass(im *mathjax.InlineMath, src []byte) bool {
+	startOff, endOff := inlineMathSpan(im, src)
+	// `endOff` is the offset PAST the closing `$` run, so the closer's last
+	// `$` byte is at endOff-1. The "byte immediately after the closer" is
+	// at endOff (or EOF).
+	openerPos := startOff
+	closerPos := endOff - 1
+	// (i) opener followed by non-whitespace.
+	if openerPos+1 >= len(src) || isASCIIWhitespace(src[openerPos+1]) {
+		return false
+	}
+	// (ii) closer preceded by non-whitespace.
+	if closerPos-1 < 0 || isASCIIWhitespace(src[closerPos-1]) {
+		return false
+	}
+	// (iii) closer NOT followed by digit (EOF passes).
+	if closerPos+1 < len(src) && isASCIIDigit(src[closerPos+1]) {
+		return false
+	}
+	return true
+}
+
+// inlineMathSpan returns the byte-offset range [startOff, endOff) in src
+// that the InlineMath's `$...$` match covers, INCLUDING the opening and
+// closing `$` delimiter runs. Derived by walking leftward across the
+// leading `$` run from the first child's segment start, and rightward
+// across the trailing `$` run from the last child's segment stop. Mirrors
+// the recovery `translateInlineMath` uses for position math.
+//
+// Returns (0, 0) for a degenerate InlineMath with no Text children — the
+// library never produces this (the inline parser only appends RawText
+// segments after a successful match), but the defensive return keeps the
+// caller's predicate logic well-typed.
+func inlineMathSpan(im *mathjax.InlineMath, src []byte) (start, end int) {
+	first := im.FirstChild()
+	last := im.LastChild()
+	if first == nil || last == nil {
+		return 0, 0
+	}
+	ft, ok := first.(*ast.Text)
+	if !ok {
+		return 0, 0
+	}
+	lt, ok := last.(*ast.Text)
+	if !ok {
+		return 0, 0
+	}
+	start = ft.Segment.Start
+	for start > 0 && src[start-1] == '$' {
+		start--
+	}
+	end = lt.Segment.Stop
+	for end < len(src) && src[end] == '$' {
+		end++
+	}
+	return start, end
+}
+
 // Point is one end of a source-range position (line/column/offset). 1-indexed
 // for line and column; offset is a byte offset into the normalized
 // (post-BOM-strip, LF-only) document.
@@ -148,6 +297,15 @@ type Options struct{}
 func Translate(doc *ast.Document, src []byte, opts Options) *Node {
 	pt := newPositionTracker(src)
 	collectFootnoteLabels(doc, pt)
+	// Currency-rule demote-only post-pass (ADR-0004 Decision 3, PRD
+	// §Implementation Decisions sub-point 2). Mutates the goldmark AST in
+	// place by replacing predicate-failing `*mathjax.InlineMath` nodes
+	// with `*ast.Text` covering the full original `$...$` range. Adjacent
+	// `*ast.Text` siblings are then coalesced by `translateChildren`'s
+	// existing offset-contiguity check (translate.go:226-232) — no new
+	// coalesce code introduced. Demote-only: never re-promotes, never
+	// re-scans the demoted range for an inner valid match.
+	currencyPostPass(doc, src)
 	root := &Node{
 		Type:     "root",
 		Children: translateChildren(doc, src, pt),
@@ -405,9 +563,7 @@ func translateMath(m *mathjax.MathBlock, src []byte, pt *positionTracker) *Node 
 // of equal length).
 func translateInlineMath(im *mathjax.InlineMath, src []byte, pt *positionTracker) *Node {
 	var value string
-	first := im.FirstChild()
-	last := im.LastChild()
-	for c := first; c != nil; c = c.NextSibling() {
+	for c := im.FirstChild(); c != nil; c = c.NextSibling() {
 		t, ok := c.(*ast.Text)
 		if !ok {
 			continue
@@ -415,23 +571,7 @@ func translateInlineMath(im *mathjax.InlineMath, src []byte, pt *positionTracker
 		seg := t.Segment
 		value += string(src[seg.Start:seg.Stop])
 	}
-	startOff, endOff := 0, 0
-	if first != nil {
-		if t, ok := first.(*ast.Text); ok {
-			startOff = t.Segment.Start
-			for startOff > 0 && src[startOff-1] == '$' {
-				startOff--
-			}
-		}
-	}
-	if last != nil {
-		if t, ok := last.(*ast.Text); ok {
-			endOff = t.Segment.Stop
-			for endOff < len(src) && src[endOff] == '$' {
-				endOff++
-			}
-		}
-	}
+	startOff, endOff := inlineMathSpan(im, src)
 	return &Node{
 		Type:         "inlineMath",
 		Value:        value,

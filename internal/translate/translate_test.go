@@ -1200,3 +1200,184 @@ func TestTranslateDisplayMathPreservesMhchemValue(t *testing.T) {
 		t.Errorf("Value: got %q, want %q (mhchem source rides through byte-for-byte; transport-only posture)", m.Value, "\\ce{H2O}\n")
 	}
 }
+
+// S04 Test (acceptance criterion #1, load-bearing): the translate-layer
+// currency post-pass demotes a predicate-failing `*mathjax.InlineMath` to
+// `*ast.Text` covering the full original `$...$` range, then translate's
+// existing offset-contiguous-text sibling coalescing folds the demoted node
+// with adjacent text siblings into a single mdast `text` node. Anchors PRD
+// fixture #3 (`It costs $5 and they had $10`) at the Go layer; the wire-side
+// CLI fixture pins the JSON byte-exact compare.
+//
+// Predicate trace for this input (per CONTEXT.md `remark-math currency rule`):
+//   - opener at orig pos 9, closer at orig pos 25.
+//   - (i)  src[opener_pos+1] = src[10] = '5' → PASS.
+//   - (ii) src[closer_pos-1] = src[24] = ' ' → FAIL.
+//   - (iii) src[closer_pos+1] = src[26] = '1' → FAIL.
+// Failure on (ii) and (iii); demote to text covering [9, 26). After
+// coalesce: one paragraph child, type=text, value covers the whole input.
+func TestTranslateCurrencyPostPassDemotesPredicateFailingInlineMath(t *testing.T) {
+	src := []byte("It costs $5 and they had $10")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	p := root.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 1 {
+		t.Fatalf("paragraph.Children: got %d, want 1 (post-pass demote + coalesce should produce a single text run)", len(p.Children))
+	}
+	c := p.Children[0]
+	if c.Type != "text" {
+		t.Fatalf("paragraph.Children[0].Type: got %q, want %q (post-pass must demote predicate-failing InlineMath to text, no inlineMath on the wire)", c.Type, "text")
+	}
+	if c.Value != "It costs $5 and they had $10" {
+		t.Errorf("paragraph.Children[0].Value: got %q, want %q (demoted span covers the full original $...$ range, including delimiters; coalesce folds with neighbors)", c.Value, "It costs $5 and they had $10")
+	}
+}
+
+// S04 Test (acceptance criterion #2, regression guard against S02): inputs
+// where ALL three predicates pass on both matches must survive the
+// post-pass unchanged. `Use $x$ and $y$.` is the canonical S02 happy-path
+// shape — two `inlineMath` nodes separated by text runs. The post-pass
+// must NOT touch them.
+//
+// Predicate trace for `Use $x$ and $y$.`:
+//   - `$x$`: opener src[5]='x' PASS; closer src[6]='x' PASS; closer+1 src[7]=' ' PASS.
+//   - `$y$`: opener src[13]='y' PASS; closer src[14]='y' PASS; closer+1 src[15]='.' PASS.
+// Both survive — five paragraph children: [text, inlineMath, text, inlineMath, text].
+func TestTranslateCurrencyPostPassDoesNotDemoteValidInlineMath(t *testing.T) {
+	src := []byte("Use $x$ and $y$.")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	p := root.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 5 {
+		t.Fatalf("paragraph.Children: got %d, want 5 (predicate-passing inlineMath must survive; no demote, no coalesce)", len(p.Children))
+	}
+	wantTypes := []string{"text", "inlineMath", "text", "inlineMath", "text"}
+	wantValues := []string{"Use ", "x", " and ", "y", "."}
+	for i := range wantTypes {
+		if p.Children[i].Type != wantTypes[i] {
+			t.Errorf("paragraph.Children[%d].Type: got %q, want %q", i, p.Children[i].Type, wantTypes[i])
+		}
+		if p.Children[i].Value != wantValues[i] {
+			t.Errorf("paragraph.Children[%d].Value: got %q, want %q", i, p.Children[i].Value, wantValues[i])
+		}
+	}
+}
+
+// S04 Test (acceptance criterion #3, convergence fixture #4a): the
+// library's greedy `$`-run matcher yields to the longer-run closer at
+// `inline.go:45` (the `line[i+1] != '$'` check), so for input
+// `$5 and $x$` it produces a SINGLE InlineMath spanning [0,10) with
+// value `5 and $x`. The three predicates then pass against the original
+// source bytes (opener+1='5' PASS, closer-1='x' PASS, closer+1 is EOF
+// PASS), so the post-pass does NOT demote. Wire shape: one paragraph,
+// one inlineMath child. This is the convergence trace pinned in PRD
+// fixture #4a — library+post-pass and pure remark-math both produce
+// `[inlineMath{value:"5 and $x"}]` on this specific input.
+func TestTranslateCurrencyPostPassConvergenceFixture(t *testing.T) {
+	src := []byte("$5 and $x$")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	p := root.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 1 {
+		t.Fatalf("paragraph.Children: got %d, want 1 (greedy library match + all-predicates-pass; no demote, no coalesce)", len(p.Children))
+	}
+	c := p.Children[0]
+	if c.Type != "inlineMath" {
+		t.Errorf("paragraph.Children[0].Type: got %q, want %q (library greedy-matches the whole span and all three predicates pass against original source bytes)", c.Type, "inlineMath")
+	}
+	if c.Value != "5 and $x" {
+		t.Errorf("paragraph.Children[0].Value: got %q, want %q (literal interior bytes between the opener and closer $, including the inner literal $)", c.Value, "5 and $x")
+	}
+}
+
+// S04 Test (acceptance criterion #4, divergence fixture #4b): the
+// library greedy-matches across the would-be valid inner `$x$` span for
+// input `$ 5 and $x$`. Library emits one InlineMath spanning [0,11) with
+// value ` 5 and $x` (asymmetric trim-halfspace does NOT fire because the
+// last char is `$`, not space). Predicate (i) fails because src[1]=' '
+// (whitespace), so the post-pass demotes the WHOLE span to text covering
+// [0,11). Demote-only: the inner `$x$` is NOT re-promoted to inlineMath.
+// This is the load-bearing divergence vs. pure remark-math pinned in
+// PRD fixture #4b + ADR-0004 Decision 3. Zero inlineMath nodes on the
+// wire; final shape `[text{value:"$ 5 and $x$"}]`.
+func TestTranslateCurrencyPostPassDivergenceFixture(t *testing.T) {
+	src := []byte("$ 5 and $x$")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	p := root.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 1 {
+		t.Fatalf("paragraph.Children: got %d, want 1 (demote-only post-pass collapses the whole greedy match to text; no inner re-promote)", len(p.Children))
+	}
+	c := p.Children[0]
+	if c.Type != "text" {
+		t.Errorf("paragraph.Children[0].Type: got %q, want %q (predicate (i) fails on leading whitespace; demote-only — no inner $x$ re-promote)", c.Type, "text")
+	}
+	if c.Value != "$ 5 and $x$" {
+		t.Errorf("paragraph.Children[0].Value: got %q, want %q (demoted span covers the full original $...$ range, including both $ delimiters and the inner literal $)", c.Value, "$ 5 and $x$")
+	}
+}
+
+// S04 Test (acceptance criterion #5): display `$$...$$` matches are NOT
+// touched by the inline currency post-pass. The predicates apply to inline
+// math only (CONTEXT.md `remark-math currency rule`: "Display `$$...$$`
+// has no such guard"). Input with a leading-whitespace-after-`$$` shape
+// must still produce a `math` node, never demoted to text.
+func TestTranslateCurrencyPostPassDoesNotTouchDisplayMath(t *testing.T) {
+	src := []byte("$$\n x\n$$\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	m := root.Children[0]
+	if m.Type != "math" {
+		t.Fatalf("Type: got %q, want %q (display math is governed by the block parser, not the inline post-pass)", m.Type, "math")
+	}
+	if m.Value != " x\n" {
+		t.Errorf("Value: got %q, want %q (display math body bytes ride through; inline currency predicates do not apply)", m.Value, " x\n")
+	}
+}
