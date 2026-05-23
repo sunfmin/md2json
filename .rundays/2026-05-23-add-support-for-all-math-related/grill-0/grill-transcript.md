@@ -204,3 +204,43 @@ If PO ratifies Q4 (or counter-picks) and lands Q6–Q10 as defaults, the load-be
 Vocabulary status: `inlineMath`, `math`, `meta` (math info-string field), **remark-math currency rule**, **Dollar-sign math (transport-only)** all now in `<product_dir>/CONTEXT.md` per Interviewer's Round-2 glossary update — confirmed read. New term introduced this Round: **unclosed-display-math fall-through rule** (Q7 / A7) — not yet in glossary; PRD or `to-prd` Stage should fold it into the `math` node entry or as a sibling to the `Frontmatter` unclosed-fence rule. Using terms `ast.InlineMath` / `ast.Math` (goldmark-side, litao91 package) — implementation-detail vocabulary, not on the wire, belongs in ADR-0004 not CONTEXT.md.
 
 ### VERDICT: continue
+
+## Round 3
+
+### Interviewer
+
+Closing. Round-2 PO answers landed every defaulted Q6–Q10 plus ratified Q4 — no fuzziness left for `to-prd` to re-ask.
+
+Audit of load-bearing terms vs CONTEXT.md and ADR-0002:
+
+- **Input dialect** — `$...$` + `$$...$$` only; bracket / fenced / AsciiMath / mhchem-as-separate / raw `<math>` all explicit non-goals. Pinned in `Markdown (input)` (already updated) and `Dollar-sign math (transport-only)`.
+- **Node shape** — `inlineMath{value, position}`, `math{value, meta, position}`. `value` semantics = `code.value` analogy, byte-for-byte, delimiters stripped. Pinned as full entries.
+- **`meta` posture** — always `null` in v1.x; reserved for deferred fenced-math Run. Pinned in `math` node entry.
+- **Currency disambiguation** — remark-math rule, byte-identical to library's behavior. Pinned as its own entry; library-pick is gated on rule fidelity.
+- **Transport vs render** — transport-only; no LaTeX→anything; Wedge intact. Pinned as `Dollar-sign math (transport-only)`.
+- **Library pick** — `github.com/litao91/goldmark-mathjax`, wired via `parse.New`, ratified Round 2. Lands in ADR-0004 at `to-prd`. Implementation-detail vocabulary (`ast.InlineMath`/`ast.Math`) explicitly NOT in CONTEXT.md per PO direction.
+- **Unclosed display math at EOF** — fall-through to prose, mirror of frontmatter unclosed-fence rule. Now pinned as **Unclosed-display-math fall-through rule** in CONTEXT.md (this Round's only inline glossary update).
+- **In-block composition** — inline-uniform inside any block container; block `$$` matches only at list-item/blockquote line-start (natural parser consequence, fall-through otherwise); block `$$` never matches inside table cell (GFM spec). PRD-content, not new CONTEXT vocabulary — derivable from existing entries.
+- **Lossiness for math** — empty drop-set by construction (`ast.InlineMath`→`inlineMath`, `ast.Math`→`math` are 1:1). Derivable from existing `Lossiness policy` + `mdast node-set v1` entries; no new term.
+- **`--no-math` flag** — rejected; `v1 flags` enumeration unchanged. No new term.
+- **ADR-0002 supersede** — Round-2 pinned ADR-0004 must cross-reference and supersede `Math ($...$, $$...$$) extensions. PRD non-goal.`. Lives in ADR, not CONTEXT.
+
+Schema delta on the wire: **+2 node types** (`inlineMath`, `math`) **+1 optional field** (`meta` on `math`, always `null` in v1.x). Confirmed against `mdast node-set v1` enumeration which already lists both.
+
+Run is genuinely additive against a shipped product. Scope was tight in IDEA, narrower after Q1, fully bounded after Round 2. Manufacturing more questions to extend the grill would be dishonest. `to-prd` has the vocabulary it needs to draft the math-Run PRD plus ADR-0004 without re-asking.
+
+Flagged terms resolved; vocab covers IDEA:
+- `inlineMath` / `math` / `meta`
+- `Dollar-sign math (transport-only)`
+- `remark-math currency rule`
+- `Unclosed-display-math fall-through rule`
+- `mdast node-set v1` (entries `inlineMath{value}` + `math{value, meta}` already present)
+- `Markdown (input)` (math extension surface already named)
+
+ADR-0004 (library pick + supersede of ADR-0002 math bullet) is `to-prd` Stage's authoring responsibility, not this Stage's.
+
+### PO
+
+_(skipped — Stage advances on accept)_
+
+### VERDICT: accept

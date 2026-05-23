@@ -60,6 +60,10 @@ _Avoid_: `mathInline`, single-`math`-node-with-`display`-discriminator (both for
 mdast node type for block/display dollar-sign math, `math{value, meta, position}`. `value` is the literal interior bytes between the `$$` fences (with each content line's trailing `\n` preserved, including the final line's — analogous to `code.value` for fenced code blocks). `meta` is the info-string after the opening fence for fenced math (e.g., a future ` ```math <meta> ` block); for `$$...$$` it is always `null`. The field stays in the schema so a future fenced-math Run has a home for the info string without a schema break. Example: source `$$\n\frac{a}{b}\n$$` produces `math{value: "\\frac{a}{b}\n", meta: null}`.
 _Avoid_: `blockMath`, `mathBlock`, `displayMath` (all break ecosystem compatibility).
 
+**Unclosed-display-math fall-through rule**:
+A document containing an opening `$$` with no matching closing `$$` before EOF is **not** a math block. The `$$` line and the body bytes that follow emit as ordinary `paragraph`/`text` nodes per CommonMark — no `math` node emitted, no bytes dropped, no error. Direct mirror of the **Frontmatter** unclosed-fence rule ("no close, no block; parse as body content"). The inline mirror is implicit: the **remark-math currency rule** already requires a closing `$` to match, so an opening `$` with no closer on the same line/paragraph simply does not fire as `inlineMath` — the `$` and subsequent bytes go on the wire as `text.value`. Both EOF and end-of-line cases must be covered as TDD fixtures. If `litao91/goldmark-mathjax` emits a partial `ast.Math` or hard-errors on unclosed `$$` rather than declining to match, that is a TDD-blocking finding for the `translate` layer to compensate (demote to prose), not a rule reopen.
+_Avoid_: hard-error on unclosed math, silent drop of body bytes, phantom-closing-fence best-effort.
+
 **mdast node-set v1**:
 The closed, enumerated set of mdast node types the v1 emitter is allowed to produce. This is the authoritative schema for TDD fixtures and downstream consumers:
 - `root`
