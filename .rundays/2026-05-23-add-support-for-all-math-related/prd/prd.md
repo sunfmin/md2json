@@ -161,7 +161,7 @@ External-behavior tests, not implementation-detail tests. Fixtures live alongsid
     | $$x$$ |
     ```
     produces a `table` whose single `tableCell` has children `[inlineMath{value: "x"}]`. Zero `math` nodes anywhere under the table.
-    Derivation: GFM table cells are inline-content-only (block parser does not fire). The library's inline parser at the cell's `$$x$$` content: per `inline.go:26-28`, opener-count loop runs past both initial `$` chars → opener=2. Per `inline.go:38-52`, scans for closer with `$`-run-length=2 where next char is not `$`; the trailing `$$` at end-of-cell-content matches (closure=2, i+1 OOB → passes the `i+1 >= len(line)` branch). Child segment covers `x`. Library emits `*ast.InlineMath{value:"x", opener-pos:0, closer-pos:3}` over the cell-content bytes (cell content `$$x$$`, 5 bytes, indices 0..4; the closing `$$` run starts at index 3).
+    Derivation: GFM table cells are inline-content-only (block parser does not fire). The library's inline parser at the cell's `$$x$$` content: per `inline.go:27`, opener-count loop runs past both initial `$` chars → opener=2. Per `inline.go:38-52`, scans for closer with `$`-run-length=2 where next char is not `$`; the trailing `$$` at end-of-cell-content matches (closure=2, i+1 OOB → passes the `i+1 >= len(line)` branch). Child segment covers `x`. Library emits `*ast.InlineMath{value:"x", opener-pos:0, closer-pos:3}` over the cell-content bytes (cell content `$$x$$`, 5 bytes, indices 0..4; the closing `$$` run starts at index 3).
     **Survival check under the canonical (CONTEXT.md-verbatim) currency predicates (post-Defect-1 fix):**
     - (i) opener-followed-by-non-whitespace: src[opener-pos+1] = src[1] = `$`. `$` is **not whitespace** → PASS. (Under the Round-2 drifted "non-whitespace-non-`$`" predicate this would have FAILED and demoted to `text{value:"$$x$$"}`, contradicting the pinned tree; the canonical predicate restores fixture survival.)
     - (ii) closer-preceded-by-non-whitespace: src[closer-pos-1] = src[2] = `x` → PASS.
@@ -181,7 +181,7 @@ External-behavior tests, not implementation-detail tests. Fixtures live alongsid
 
 14. **Library behavior contract test (unclosed-`$$`-at-EOF) — behavioral A-vs-B equivalence.** A focused in-process unit test that parses two inputs through `litao91/goldmark-mathjax` (no `translate`, no `emit`, just goldmark) and asserts the AST-shape invariant the translate-layer unclosed-`$$` predicate relies on (PRD §Unclosed-fence behavior, ADR-0004 Decision 5):
     - Input **A** (unclosed): `$$\nx\n` (5 bytes; `$$`, LF, `x`, LF; no closing fence, EOF after body LF).
-    - Input **B** (closed): `$$\nx\n$$\n` (7 bytes; `$$`, LF, `x`, LF, `$$`, LF).
+    - Input **B** (closed): `$$\nx\n$$\n` (8 bytes; `$$\nx\n$$\n`).
 
     **Assertion:** both inputs produce a goldmark AST containing exactly one `*ast.Math` (`MathBlock`) node, and for that node, `MathBlock.Lines().Last().Stop` is **identical** on A and B (both equal to the byte offset immediately after the body line's terminating LF — orig pos 5 in A's source, orig pos 5 in B's source as well).
 
