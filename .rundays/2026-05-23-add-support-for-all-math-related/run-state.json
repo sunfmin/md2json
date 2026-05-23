@@ -8,15 +8,15 @@
     "round": 0,
     "transcript_path": null,
     "redo_count": 0,
-    "issue_slug": "03-display-math-happy-path"
+    "issue_slug": "04-currency-rule-post-pass"
   },
   "queue": {
     "issues_total": 7,
-    "issues_done": 2,
+    "issues_done": 3,
     "max_issues": 50,
-    "current_issue": "03-display-math-happy-path"
+    "current_issue": "04-currency-rule-post-pass"
   },
-  "last_verdict": "accept",
+  "last_verdict": null,
   "rate_limit": {
     "consecutive_limited_wakes": 0,
     "last_hit_at": null

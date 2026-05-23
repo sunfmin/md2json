@@ -61,3 +61,7 @@
 {"t":"2026-05-23T16:01:07Z","ev":"queue-advance","prev":"02-inline-math-happy-path","next":"03-display-math-happy-path"}
 {"t":"2026-05-23T16:01:13Z","ev":"cycle-commit","result":"committed","sha":"8ea60c3","stage":"mini-arch","verdict":"accept"}
 {"t":"2026-05-23T16:09:59Z","ev":"agent-return","role":"proposer-tdd","stage":"tdd","issue":"03-display-math-happy-path","verdict":"accept"}
+{"t":"2026-05-23T16:10:02Z","ev":"cycle-commit","result":"committed","sha":"e1698a6","stage":"tdd","verdict":"accept"}
+{"t":"2026-05-23T16:10:21Z","ev":"pre-compact","state":"{\"run_id\":\"2026-05-23-add-support-for-all-math-related\",\"idea_path\":\"/Users/sunfmin/Developments/md2json/.rundays/2026-05-23-add-support-for-all-math-related/IDEA.md\",\"product_dir\":\"/Users/sunfmin/Developments/md2json\",\"started_at\":\"2026-05-23T14:17:58Z\",\"current_stage\":\"tdd\",\"stage_context\":{\"round\":0,\"transcript_path\":null,\"redo_count\":0,\"issue_slug\":\"03-display-math-happy-path\"},\"queue\":{\"issues_total\":7,\"issues_done\":2,\"max_issues\":50,\"current_issue\":\"03-display-math-happy-path\"},\"last_verdict\":\"accept\",\"rate_limit\":{\"consecutive_limited_wakes\":0,\"last_hit_at\":null},\"run_status\":\"active\"}"}
+{"t":"2026-05-23T16:13:43Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","issue":"03-display-math-happy-path","verdict":"accept","note":"no-strong-candidates-block-vs-inline-shapes-differ"}
+{"t":"2026-05-23T16:13:46Z","ev":"queue-advance","prev":"03-display-math-happy-path","next":"04-currency-rule-post-pass"}
