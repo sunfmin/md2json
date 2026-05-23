@@ -1381,3 +1381,125 @@ func TestTranslateCurrencyPostPassDoesNotTouchDisplayMath(t *testing.T) {
 		t.Errorf("Value: got %q, want %q (display math body bytes ride through; inline currency predicates do not apply)", m.Value, " x\n")
 	}
 }
+
+// S05 Test (issue 05 acceptance bullet #1, PRD fixture #5): unclosed `$$`
+// at EOF demotes to a `paragraph` whose `text` children mirror goldmark's
+// standard prose-paragraph segmentation — one `text` per source line, no
+// embedded LF in any text value. Anchors ADR-0004 Decision 5's
+// translate-layer unclosed-`$$` compensation at the Go layer (the wire-side
+// CLI fixture pins the JSON byte-exact compare).
+//
+// Predicate trace for input `$$\n\frac{a}{b}\n` (14 bytes, no closer):
+//   - Library Open consumes `$$\n`, creates MathBlock with indent=0.
+//   - Library Continue on `\frac{a}{b}\n` appends segment [3, 14) to Lines().
+//   - EOF reached; framework calls Close (which only nils a context key).
+//   - Lines().Last().Stop == 14.
+//   - translate predicate walks src[14:] — empty (EOF) — no `$$` closer
+//     fence found → UNCLOSED → compensation fires.
+//   - Demote: emit one `paragraph` with two `text` children:
+//       text{value:"$$"}      covering [0, 2)   (opening line, LF excluded)
+//       text{value:"\\frac{a}{b}"} covering [3, 13) (body line, LF excluded)
+//     No embedded LF, mirroring goldmark prose-paragraph segmentation
+//     (one `*ast.Text` per source line per the soft-line-break note in
+//     PRD §Notes).
+//   - Zero `math` nodes on the wire; exit 0.
+func TestTranslateUnclosedDisplayMathDemotesToParagraphWithTwoTextChildren(t *testing.T) {
+	src := []byte("$$\n\\frac{a}{b}\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1 (unclosed `$$` demotes to a single paragraph; no `math` siblings)", len(root.Children))
+	}
+	p := root.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("Type: got %q, want %q (unclosed `$$` MUST NOT emit a `math` node — ADR-0004 Decision 5 / CONTEXT.md `Unclosed-display-math fall-through rule`)", p.Type, "paragraph")
+	}
+	if len(p.Children) != 2 {
+		t.Fatalf("paragraph.Children: got %d, want 2 (one `text` per source line, segments stop BEFORE the LF; opening-`$$` line + body line)", len(p.Children))
+	}
+	wantTypes := []string{"text", "text"}
+	wantValues := []string{"$$", "\\frac{a}{b}"}
+	for i := range wantTypes {
+		c := p.Children[i]
+		if c.Type != wantTypes[i] {
+			t.Errorf("paragraph.Children[%d].Type: got %q, want %q", i, c.Type, wantTypes[i])
+		}
+		if c.Value != wantValues[i] {
+			t.Errorf("paragraph.Children[%d].Value: got %q, want %q (segment stops BEFORE the LF; no embedded LF in any text value)", i, c.Value, wantValues[i])
+		}
+	}
+	// Sanity guard: zero math nodes anywhere in root.Children.
+	for i, c := range root.Children {
+		if c.Type == "math" {
+			t.Errorf("root.Children[%d].Type: got %q, want anything-but-`math` (unclosed `$$` must not produce a `math` node)", i, c.Type)
+		}
+	}
+}
+
+// S05 Test (issue 05 acceptance bullet #2, regression guard): the closed
+// `$$\nx\n$$\n` case continues to produce a single `math{value:"x\n",
+// meta:nil}` (S03 regression held). The unclosed-`$$` compensation MUST
+// be triggered ONLY when the src-tail predicate finds no closing fence;
+// the closed case (PRD fixture #2 + S03 happy path) must be unaffected.
+func TestTranslateClosedDisplayMathStillEmitsMathNode(t *testing.T) {
+	src := []byte("$$\nx\n$$\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	m := root.Children[0]
+	if m.Type != "math" {
+		t.Fatalf("Type: got %q, want %q (closed `$$...$$` MUST still produce a `math` node; compensation predicate must NOT misfire)", m.Type, "math")
+	}
+	if m.Value != "x\n" {
+		t.Errorf("Value: got %q, want %q (closed-case body bytes preserved byte-for-byte, trailing `\\n` included)", m.Value, "x\n")
+	}
+	if m.Meta != nil {
+		t.Errorf("Meta: got *%q, want nil", *m.Meta)
+	}
+}
+
+// S05 Test (issue 05 acceptance bullet #3, PRD fixture #6): unclosed inline
+// `$` on the same paragraph is the LIBRARY's own non-match path — the
+// inline parser at `probe/goldmark-mathjax/inline.go:33-37` returns a Text
+// segment of just the opener `$` bytes when no closer is found before
+// line==nil, and the rest of the paragraph rides through as ordinary
+// `*ast.Text`. translate's contiguous-text sibling-coalescing
+// (`translate.go:225-231`) then merges everything into a single mdast
+// `text` node. NO translate-side compensation involved; this test pins
+// that the library handles unclosed inline correctly on its own.
+func TestTranslateUnclosedInlineMathLibraryHandlesNoCompensation(t *testing.T) {
+	src := []byte("prose $x = 5 still prose")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	p := root.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 1 {
+		t.Fatalf("paragraph.Children: got %d, want 1 (sibling-coalesce merges the unclosed-`$`+rest-of-line into a single text run)", len(p.Children))
+	}
+	c := p.Children[0]
+	if c.Type != "text" {
+		t.Errorf("paragraph.Children[0].Type: got %q, want %q (unclosed inline `$` rides through as ordinary text; zero `inlineMath` nodes)", c.Type, "text")
+	}
+	if c.Value != "prose $x = 5 still prose" {
+		t.Errorf("paragraph.Children[0].Value: got %q, want %q (literal source bytes survive byte-for-byte)", c.Value, "prose $x = 5 still prose")
+	}
+}

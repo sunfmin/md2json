@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	mathjax "github.com/litao91/goldmark-mathjax"
 	"github.com/yuin/goldmark/ast"
 )
 
@@ -261,4 +262,96 @@ func containsNodeKind(n ast.Node, kind string) bool {
 		}
 	}
 	return false
+}
+
+// findMathBlock walks the goldmark AST rooted at n and returns the first
+// `*mathjax.MathBlock` it finds (depth-first preorder). Returns nil if none.
+// Used by TestParseUnclosedAndClosedDisplayMathHaveIdenticalLinesLastStop to
+// reach into the library's block node from the parse-layer test scope.
+func findMathBlock(n ast.Node) *mathjax.MathBlock {
+	if n == nil {
+		return nil
+	}
+	if mb, ok := n.(*mathjax.MathBlock); ok {
+		return mb
+	}
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		if mb := findMathBlock(c); mb != nil {
+			return mb
+		}
+	}
+	return nil
+}
+
+// TestParseUnclosedAndClosedDisplayMathHaveIdenticalLinesLastStop is S05's
+// PRD fixture #14 (library-contract A-vs-B equivalence). It pins the
+// load-bearing library-behavior invariant that ADR-0004 Decision 5's
+// unclosed-`$$` translate compensation rests on:
+//
+//	The AST alone cannot distinguish a closed `$$...$$` block from one
+//	whose closing fence was never written. Both produce a `*mathjax.MathBlock`
+//	whose `Lines().Last().Stop` lands at the byte offset immediately AFTER
+//	the body line's terminating LF — identical for input `$$\nx\n` (5 bytes,
+//	no closer, EOF after body LF) and `$$\nx\n$$\n` (8 bytes, closed). The
+//	closing-fence line is NOT appended to `Lines()` per
+//	`probe/goldmark-mathjax/block.go:49-57`, which returns parser.Close
+//	BEFORE the body-line append branch at `block.go:60-64`. The closed-vs-
+//	unclosed decision the translate post-pass makes therefore MUST inspect
+//	source bytes AFTER `Lines().Last().Stop`, not any field on MathBlock
+//	itself (MathBlock embeds `ast.BaseBlock` and adds zero fields per
+//	`probe/goldmark-mathjax/block_node.go:5-7`).
+//
+// This is behavioral, not structural — a future library upgrade may add
+// fields to MathBlock without breaking this test, as long as the
+// Lines().Last().Stop equality on A and B holds. The test will fail
+// explicitly (and trigger an ADR-0004 reopen) if a future upgrade either
+// switches A to decline-to-match or appends the closing fence to B's
+// Lines() (making A's and B's Stop differ).
+//
+// Cross-ref PRD Testing Decisions §fixture #14 + ADR-0004 Decision 5 +
+// CONTEXT.md `Unclosed-display-math fall-through rule`.
+func TestParseUnclosedAndClosedDisplayMathHaveIdenticalLinesLastStop(t *testing.T) {
+	srcA := []byte("$$\nx\n")    // 5 bytes, unclosed, EOF after body LF
+	srcB := []byte("$$\nx\n$$\n") // 8 bytes, closed
+
+	rA, err := Parse(srcA)
+	if err != nil {
+		t.Fatalf("Parse A: %v", err)
+	}
+	rB, err := Parse(srcB)
+	if err != nil {
+		t.Fatalf("Parse B: %v", err)
+	}
+
+	mbA := findMathBlock(rA.Doc)
+	if mbA == nil {
+		t.Fatalf("input A %q: no *mathjax.MathBlock in AST; library declined to match the opening `$$`, which would break ADR-0004 Decision 5's premise (the compensation assumes the library always emits a MathBlock for `$$`-opened blocks regardless of closer)", srcA)
+	}
+	mbB := findMathBlock(rB.Doc)
+	if mbB == nil {
+		t.Fatalf("input B %q: no *mathjax.MathBlock in AST; library failed on the closed case, which would break the S03 happy path too", srcB)
+	}
+
+	linesA := mbA.Lines()
+	if linesA == nil || linesA.Len() == 0 {
+		t.Fatalf("A: MathBlock.Lines() is empty; ADR-0004 Decision 5's predicate has no Last().Stop to inspect")
+	}
+	linesB := mbB.Lines()
+	if linesB == nil || linesB.Len() == 0 {
+		t.Fatalf("B: MathBlock.Lines() is empty")
+	}
+
+	stopA := linesA.At(linesA.Len() - 1).Stop
+	stopB := linesB.At(linesB.Len() - 1).Stop
+
+	const wantStop = 5 // orig pos 5 in both A and B (offset past body's terminating LF)
+	if stopA != wantStop {
+		t.Errorf("A: Lines().Last().Stop = %d, want %d (offset past body line's terminating LF)", stopA, wantStop)
+	}
+	if stopB != wantStop {
+		t.Errorf("B: Lines().Last().Stop = %d, want %d (offset past body line's terminating LF; closing-fence line is NOT appended to Lines() per probe/goldmark-mathjax/block.go:49-57)", stopB, wantStop)
+	}
+	if stopA != stopB {
+		t.Errorf("A and B have different Lines().Last().Stop (A=%d, B=%d) — ADR-0004 Decision 5's premise (closed vs unclosed indistinguishable from AST alone) is broken; reopen ADR-0004", stopA, stopB)
+	}
 }
