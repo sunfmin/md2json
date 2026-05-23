@@ -107,3 +107,21 @@ Revision applied. Six defects addressed.
 1. **ADR-0004 Decision 3 carries stale divergence cross-ref to fixture #4a — Round-4 defect 2 only partially fixed.** Decision 3 body still ends: "divergence is fixture-pinned in PRD Testing Decisions §fixture #4a (input `$5 and $x$`)". PRD #4a now pins the CONVERGENCE trace; divergence is pinned in #4b (`$ 5 and $x$`). ADR-0004 Consequences section (lines 35, 45) was updated correctly in Round 4; Decision 3 body was not. Decision 3 contradicts its own Consequences — a future maintainer reading the canonical decision record follows a broken pointer. Load-bearing.
 
 ### VERDICT: continue
+
+## Round 6
+
+### Critic
+
+Round-5 defect (ADR-0004 Decision 3 stale cite) verified fixed at ADR-0004 line 25. Cross-artifact consistency re-checked:
+
+- ADR-0004 Decision 3 cite matches PRD #4a convergence + PRD #4b divergence.
+- ADR-0004 Consequences (lines 35, 43, 45) all reference #4b for divergence and #4a for convergence consistently.
+- ADR-0004 Decision 5 scope restriction matches PRD §Out of Scope cross-ref.
+- PRD predicate (i) reads CONTEXT.md-verbatim "non-whitespace"; fixture #11 survival trace consistent.
+- PRD fixture #14 byte counts (A=5, B=8) and `Last().Stop=5` invariant trace against `block.go:25-69`, holds.
+- CONTEXT.md `remark-math currency rule` closing sentence aligns with ADR-0004 Decision 3 + PRD §Currency disambiguation.
+- No vocabulary drift. No phantom references. No disjunctive acceptance. Every fixture pins an exact tree.
+
+No remaining defects. `to-issues` has unambiguous source: 14 numbered fixtures with exact tree pins + derivations cited to verified library probe; three-module touch-set with concrete code-surface estimates; two named translate compensations with deterministic predicates; out-of-scope shape declared.
+
+### VERDICT: accept
