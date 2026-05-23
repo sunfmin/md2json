@@ -37,3 +37,5 @@
 {"t":"2026-05-23T15:29:53Z","ev":"agent-return","role":"proposer-prd","stage":"critique-prd","verdict":"continue","note":"round-4-narrow-fixes"}
 {"t":"2026-05-23T15:29:56Z","ev":"cycle-commit","result":"committed","sha":"b472dd4","stage":"critique-prd","verdict":"continue"}
 {"t":"2026-05-23T15:31:27Z","ev":"agent-return","role":"critic","stage":"critique-prd","verdict":"continue","note":"round-5-residual-decision3-staleness"}
+{"t":"2026-05-23T15:31:31Z","ev":"cycle-commit","result":"committed","sha":"3ea8aa1","stage":"critique-prd","verdict":"continue"}
+{"t":"2026-05-23T15:32:04Z","ev":"orchestrator-direct-edit","file":"docs/adr/0004-math-extension-library.md","reason":"single-line-Decision3-staleness-fix","stage":"critique-prd","note":"skipped-proposer-spawn-for-1line"}
