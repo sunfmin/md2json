@@ -3,6 +3,8 @@ package parse
 import (
 	"errors"
 	"testing"
+
+	"github.com/yuin/goldmark/ast"
 )
 
 // TestParseClosedFenceMapFrontmatter pins the happy path: a closed YAML
@@ -204,4 +206,59 @@ func TestParseClosedFenceScalarNullFrontmatter(t *testing.T) {
 	if r.Frontmatter != nil {
 		t.Errorf("Frontmatter: got %v (%T), want nil", r.Frontmatter, r.Frontmatter)
 	}
+}
+
+// TestParseRegistersMathExtension is the S01 tracer bullet: the math
+// extension MUST be registered in `parse.New`'s standard extension set
+// (no flag, no opt-in). The observable wire-side proof is that parsing
+// `$x$` produces a goldmark node of kind "InlineMath" somewhere in the
+// resulting tree — without the extension, the input parses as a plain
+// `text` containing the literal `$x$` byte run.
+//
+// The kind name "InlineMath" is the public goldmark-ast NodeKind
+// registered by `github.com/litao91/goldmark-mathjax` (see ADR-0004
+// Decision 4 and probe/goldmark-mathjax/block_inline.go:28). Asserting
+// on the kind name (a string) rather than importing the library type
+// keeps this test resilient to library struct-name churn while still
+// pinning the load-bearing contract: the math extension IS wired into
+// the standard extension set.
+//
+// S02 (inline-math happy path) is what surfaces the math node onto the
+// JSON wire as `inlineMath{value}`; this S01 test only asserts the
+// extension is loaded — the translate-layer mapping is intentionally
+// not in scope for S01.
+func TestParseRegistersMathExtension(t *testing.T) {
+	src := []byte("$x$")
+	r, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if r.Doc == nil {
+		t.Fatal("Doc should not be nil")
+	}
+	if !containsNodeKind(r.Doc, "InlineMath") {
+		t.Errorf("Parse(%q): no goldmark node of kind %q found in the AST; the math extension is not wired into parse.New (S01 acceptance criterion #2)", src, "InlineMath")
+	}
+}
+
+// containsNodeKind walks the goldmark AST rooted at n and returns true
+// iff any descendant (or n itself) has a `Kind().String()` equal to
+// `kind`. Used by TestParseRegistersMathExtension to assert math-node
+// presence without importing the goldmark-mathjax library directly
+// (the extension's NodeKind names are part of the library's public
+// contract per probe/goldmark-mathjax/block_inline.go:28 +
+// block_node.go:9).
+func containsNodeKind(n ast.Node, kind string) bool {
+	if n == nil {
+		return false
+	}
+	if n.Kind().String() == kind {
+		return true
+	}
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		if containsNodeKind(c, kind) {
+			return true
+		}
+	}
+	return false
 }

@@ -46,6 +46,7 @@ import (
 	"strconv"
 	"strings"
 
+	mathjax "github.com/litao91/goldmark-mathjax"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -92,8 +93,22 @@ func newWithoutFrontmatter() goldmark.Markdown {
 // both paths used to construct by hand. Addresses ADR-0002 §4's "no central
 // registry" maintainer-hazard note: the registry is now this function.
 func newGoldmarkWith(extras ...goldmark.Extender) goldmark.Markdown {
-	exts := make([]goldmark.Extender, 0, 2+len(extras))
-	exts = append(exts, extension.GFM, extension.Footnote)
+	exts := make([]goldmark.Extender, 0, 3+len(extras))
+	// GFM + Footnote (existing v1 base set), plus the math extender from
+	// the v1.x math Run. Wired here per ADR-0004 Decision 1 + 2: the
+	// math extender is appended to parse.New's single-function extension
+	// list, no central registry, no runtime toggle. md2json never emits
+	// HTML, so the math extender's Renderer side is unused (same pattern
+	// as GFM / Footnote / Frontmatter in ADR-0002). Registration order
+	// (GFM → Footnote → math → caller-supplied extras) is preserved so
+	// goldmark's extension-priority resolution sees a stable input.
+	//
+	// S01 wires the extension only; S02/S03 add the translate-layer
+	// mapping from *mathjax.InlineMath / *mathjax.MathBlock to mdast
+	// `inlineMath` / `math` nodes plus the currency-rule post-pass
+	// (ADR-0004 Decision 3) and the unclosed-`$$` compensation
+	// (ADR-0004 Decision 5).
+	exts = append(exts, extension.GFM, extension.Footnote, mathjax.NewMathJax())
 	exts = append(exts, extras...)
 	return goldmark.New(goldmark.WithExtensions(exts...))
 }
