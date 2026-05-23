@@ -67,3 +67,26 @@ Revision applied. Six defects addressed.
 4. **Fixture #14 still pins "no closed-state field" via reflection/struct introspection — fragile test method.** "No closed-state field exists" is a structural negation testable only via reflection over an external package's struct — breaks on any unrelated upstream field addition. The contract the compensation actually relies on is *behavioral*: "when the source has no closing `$$`, `MathBlock.Lines()` covers the body bytes and the parsed AST shape is indistinguishable from a closed case parsed only up to the same body extent." Rewrite #14 as a behavioral assertion: parse input A (unclosed `$$\nx\n`) and input B (closed `$$\nx\n$$\n`); assert `MathBlock.Lines().Last().Stop` is identical on A and B (modulo the closing fence's segment). Then "library upgrade adds closed-state field" is irrelevant if behavior is unchanged.
 
 ### VERDICT: continue
+
+## Round 4
+
+### Critic
+
+(Post-Round-3 fixes. Trace re-verified against `probe/goldmark-mathjax/inline.go` + `block.go` + `block_node.go` + `CONTEXT.md`.)
+
+**Verified fixes:**
+- Defect 1 (predicate (i) drift): fixed. Predicate (i) reads "non-whitespace" verbatim. Fixture #11 Survival check trace holds: `src[opener-pos+1]='$'`, `$` is not whitespace → PASS → no demote → `[inlineMath{value:"x"}]` pinned-tree survives.
+- Defect 2 (divergence fixture): added as #4b. Re-traced through `inline.go:24-52` + post-pass + coalesce. Library emits one `InlineMath` (value=` 5 and $x`); predicate (i) `src[1]=' '` → FAIL → demote → wire = `[text{value:"$ 5 and $x$"}]`. Pinned tree holds.
+- Defect 4 (fixture #14 behavioral A vs B): trace holds. A and B both have `Lines().Last().Stop = 5` because B's closing fence enters the `parser.Close` branch at `block.go:49-57` BEFORE the `Lines().Append(seg)` at `:62`. Behavioral equivalence is a robust assertion.
+
+**Remaining defects:**
+
+1. **Fixture #14 input B byte count wrong.** PRD says "Input **B** (closed): `$$\nx\n$$\n` (7 bytes; `$$`, LF, `x`, LF, `$$`, LF)". Actual byte count = 8 (`$`,`$`,`\n`,`x`,`\n`,`$`,`$`,`\n`). The 7-byte claim is a quantitative error in a TDD-blocking fixture spec. Does not invalidate the `Last().Stop=5` assertion (which is correct), but the byte-count is wrong by one.
+
+2. **ADR-0004 cross-refs to PRD fixtures are stale post-Round-3.** PRD now uses #4a as convergence trace and #4b as divergence trace. ADR-0004 still says: "narrow divergence pinned in PRD fixture #4a" — wrong, divergence is #4b. "explicit fixtures (PRD fixtures #3, #4a, #5)" — missing #4b. "PRD fixture #4a pins the trace on input `$5 and $x$`" then "divergence manifests on inputs where..." — old framing where #4a WAS the divergence fixture; current PRD says #4a converges. ADR-0004 was not refreshed when PRD added #4b.
+
+3. **Out-of-scope §"Unclosed `$$` block with internal blank line" cross-refs an unrestricted ADR-0004 Decision 5.** PRD: "Cross-ref ADR-0004 Decision 5 (unclosed-`$$` compensation is for the no-internal-blank shape only)." ADR-0004 Decision 5 does NOT scope its compensation to the no-internal-blank shape; it specifies a general unclosed-`$$`-at-EOF compensation. Either revise ADR-0004 Decision 5 to add the no-internal-blank scope restriction explicitly, or drop the parenthetical from PRD §Out of Scope.
+
+4. **Fixture #11 derivation cites `inline.go:26-28` for the opener-count loop, but the actual opener-count for-statement is at `inline.go:27`.** Cosmetic; flagging because every other fixture cites line:line ranges that match the actual code precisely.
+
+### VERDICT: continue
