@@ -58,6 +58,7 @@ var mdastNodeSetV1 = map[string]bool{
 	"table":              true,
 	"tableRow":           true,
 	"tableCell":          true,
+	"math":               true, // v1.x math Run (display `$$...$$`)
 	// Inline:
 	"text":              true,
 	"emphasis":          true,
@@ -70,6 +71,7 @@ var mdastNodeSetV1 = map[string]bool{
 	"footnoteReference": true,
 	"break":             true,
 	"delete":            true,
+	"inlineMath":        true, // v1.x math Run (inline `$...$`)
 }
 
 // lossinessCorpus is the hand-curated input list exercising every node type
@@ -104,6 +106,8 @@ var mdastNodeSetV1 = map[string]bool{
 //	footnoteReference     footnote-ref-and-def
 //	break                 hard-break-two-spaces
 //	delete                strikethrough
+//	inlineMath            inline-math-happy-path (v1.x math Run)
+//	math                  display-math-happy-path (v1.x math Run)
 //
 // GFM extras explicitly exercised (the "+ sampling of GFM extension
 // constructs" half of S10a acceptance criterion #5):
@@ -151,6 +155,12 @@ var lossinessCorpus = []struct {
 	{"image-reference-full", "![alt][id]\n\n[id]: https://example.com/x.png\n"},
 	{"footnote-ref-and-def", "intro[^a] more\n\n[^a]: footnote body\n"},
 	{"closed-fence-frontmatter", "---\ntitle: hi\n---\n\nbody\n"},
+	// Math-Run additions (S07): exercise the two new node types so the
+	// reachable mdast-node-set surface includes inlineMath / math. Without
+	// these inputs the coverage half (TestLossinessCorpusCoversEveryV1NodeType)
+	// would observe a vacuous pass after the map gained the math entries.
+	{"inline-math-happy-path", "prose $x = 5$ more\n"},
+	{"display-math-happy-path", "$$\n\\frac{a}{b}\n$$\n"},
 	{
 		"big-mixed",
 		"---\ntitle: kitchen sink\n---\n\n" +

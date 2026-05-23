@@ -1837,3 +1837,58 @@ func TestTranslateInlineMathInsideBlockquoteParagraph(t *testing.T) {
 		}
 	}
 }
+
+// S07 Test (issue 07 acceptance bullet #1, PRD fixture #8 — mismatched
+// braces inline): a writer with unbalanced braces inside `$...$` sees the
+// broken bytes ride through verbatim inside `inlineMath.value`. md2json is
+// transport-only — no brace-balance check, no LaTeX validation, no macro
+// expansion. Anchors CONTEXT.md "Dollar-sign math (transport-only)" +
+// "Text/Code value preservation" at the Go layer for the inline-math path.
+//
+// Derivation trace for input `$\frac{a}{b$` (12 bytes) per
+// `probe/goldmark-mathjax/inline.go:24-52`:
+//   - opener at orig pos 0; opener-loop counts run=1 (line[1]='\\' stops).
+//   - block.Advance(1). Post-advance slice = `\frac{a}{b$` (11 chars).
+//   - Scan i=0..10 in slice: at i=10 (slice last byte, `$`), oldi=10,
+//     inner-loop slice[10]='$', i=11 hits `i<len(line)` boundary (len=11)
+//     → i=11, closure=1==opener. Closer-condition `(i+1=12 >= 11 || ...)`
+//     TRUE → close.
+//   - Child segment covers orig pos 1..11, value=`\frac{a}{b` (10 chars
+//     including the unbalanced `{`). Trim-halfspace check (inline.go:62-82):
+//     src[1]='\\' (not space) → no trim. Library emits one `*ast.InlineMath`.
+//
+// Translate currency post-pass (predicates per CONTEXT.md remark-math
+// currency rule):
+//   - (i)   src[opener_pos+1] = src[1]  = '\\' (non-whitespace) → PASS.
+//   - (ii)  src[closer_pos-1] = src[10] = 'b'  (non-whitespace) → PASS.
+//   - (iii) src[closer_pos+1] = src[12] = EOF (no byte after)  → PASS.
+//
+// No predicate failure → no demote. Final wire shape: one paragraph with
+// one inlineMath child whose value is `\frac{a}{b` byte-for-byte. The
+// unbalanced `{` is downstream's problem; md2json carries the bytes.
+func TestTranslateInlineMathMismatchedBracesRideThroughAsValue(t *testing.T) {
+	src := []byte("$\\frac{a}{b$")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	p := root.Children[0]
+	if p.Type != "paragraph" {
+		t.Fatalf("root.Children[0].Type: got %q, want %q", p.Type, "paragraph")
+	}
+	if len(p.Children) != 1 {
+		t.Fatalf("paragraph.Children: got %d, want 1 (one inlineMath spanning the full input); got %+v", len(p.Children), p.Children)
+	}
+	c := p.Children[0]
+	if c.Type != "inlineMath" {
+		t.Errorf("paragraph.Children[0].Type: got %q, want %q (transport-only: mismatched braces do NOT invalidate the match)", c.Type, "inlineMath")
+	}
+	if c.Value != "\\frac{a}{b" {
+		t.Errorf("paragraph.Children[0].Value: got %q, want %q (unbalanced `{` rides through inside value byte-for-byte; no brace-balance check, no LaTeX validation)", c.Value, "\\frac{a}{b")
+	}
+}
