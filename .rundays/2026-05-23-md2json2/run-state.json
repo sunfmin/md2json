@@ -8,17 +8,17 @@
     "round": "0",
     "transcript_path": null,
     "redo_count": "0",
-    "issue_slug": "11-cli-flags-error-format-exit-codes",
+    "issue_slug": "12-release-pipeline-and-go-install",
     "scope": "mini",
     "variants_written": "0"
   },
   "queue": {
     "issues_total": 13,
-    "issues_done": 11,
+    "issues_done": 12,
     "max_issues": 50,
-    "current_issue": "11-cli-flags-error-format-exit-codes"
+    "current_issue": "12-release-pipeline-and-go-install"
   },
-  "last_verdict": "accept",
+  "last_verdict": null,
   "rate_limit": {
     "consecutive_limited_wakes": 0,
     "last_hit_at": null

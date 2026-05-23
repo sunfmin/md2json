@@ -61,6 +61,11 @@ const preInputPathToken = "md2json2"
 // options collects the parsed v1 flag set. At S01 only the recognition matters
 // — nothing reads these values yet. They are kept as fields so later slices
 // thread them into read/parse/translate/emit without reshuffling cli.
+//
+// Invariant on the positional: `filePath` is the single source of truth. It is
+// "" when no positional was seen (stdin source by default) and "-" when the
+// explicit stdin sentinel was given; both collapse to "use stdin" at the source-
+// resolution branch in Run. Any other value is a real on-disk path.
 type options struct {
 	output          string // -o / --output <FILE>; "" means stdout
 	pretty          bool   // --pretty
@@ -69,7 +74,6 @@ type options struct {
 	help            bool   // -h / --help
 	version         bool   // -V / --version
 	filePath        string // positional FILE; "" or "-" means stdin
-	hasPositional   bool   // true once a positional has been seen (incl. "-")
 }
 
 // parseArgs walks args (argv minus argv[0]) and returns the populated options
@@ -86,7 +90,6 @@ func parseArgs(args []string) (opts options, usageErr string) {
 			// End-of-flags sentinel. Everything after is positional.
 			i++
 			for ; i < len(args); i++ {
-				opts.hasPositional = true
 				opts.filePath = args[i]
 			}
 			return opts, ""
@@ -120,7 +123,6 @@ func parseArgs(args []string) (opts options, usageErr string) {
 			i++
 		case a == "-":
 			// Explicit stdin sentinel; equivalent to no positional.
-			opts.hasPositional = true
 			opts.filePath = a
 			i++
 		case len(a) > 0 && a[0] == '-':
@@ -129,7 +131,6 @@ func parseArgs(args []string) (opts options, usageErr string) {
 		default:
 			// Positional FILE. S01 accepts only one; if more are given, the
 			// last one wins. Multi-file is explicitly out of scope per PRD.
-			opts.hasPositional = true
 			opts.filePath = a
 			i++
 		}
@@ -147,13 +148,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	opts, usageErr := parseArgs(args)
 	if usageErr != "" {
-		// Pre-input usage error per CONTEXT.md "Error format" + PRD §
-		// "Error-format / exit-code mapping": no input source has been
-		// determined, so `<path>` is the literal program name `md2json2`
-		// and the position is the `:0:0:` sentinel. Exit code 2 (usage
-		// error, distinct from 1 = parse/document-scoped error).
-		writePositionedError(stderr, preInputPathToken, 0, 0, usageErr)
-		return 2
+		return writePreInputUsageError(stderr, usageErr)
 	}
 
 	// -h / -V short-circuit successfully on stdout (CLI contract: usage and
@@ -174,14 +169,12 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	// error-format contract and S02 acceptance criterion #3).
 	src := stdin
 	pathToken := "-"
-	if opts.hasPositional && opts.filePath != "" && opts.filePath != "-" {
+	if opts.filePath != "" && opts.filePath != "-" {
 		f, err := os.Open(opts.filePath)
 		if err != nil {
 			// Pre-input usage error: the file could not be opened, so no
-			// bytes have been read and `<path>` is `md2json2` (PRD user
-			// story 20 + error-format/exit-code mapping table). Exit 2.
-			writePositionedError(stderr, preInputPathToken, 0, 0, err.Error())
-			return 2
+			// bytes have been read.
+			return writePreInputUsageError(stderr, err.Error())
 		}
 		defer f.Close()
 		src = f
@@ -198,8 +191,7 @@ func Run(argv []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if opts.output != "" {
 		f, err := os.Create(opts.output)
 		if err != nil {
-			writePositionedError(stderr, preInputPathToken, 0, 0, err.Error())
-			return 2
+			return writePreInputUsageError(stderr, err.Error())
 		}
 		defer f.Close()
 		out = f
@@ -294,4 +286,18 @@ func writePositionedError(stderr io.Writer, pathToken string, line, col int, msg
 // glossary term ("document-scoped") at call sites.
 func writeDocScopedError(stderr io.Writer, pathToken string, err error) {
 	writePositionedError(stderr, pathToken, 0, 0, err.Error())
+}
+
+// writePreInputUsageError renders the canonical stderr line for a pre-input
+// usage error — a failure raised BEFORE any input source has been determined
+// (unknown flag, missing flag value, unreadable input FILE, uncreatable output
+// FILE). Per CONTEXT.md "Error format" + PRD US20 the `<path>` token is the
+// literal program name `md2json2` (no source ever in play), the position is
+// the `:0:0:` sentinel, and the exit code is 2 (usage error, distinct from
+// 1 = document-scoped parse error). Returns the exit code so call sites read
+// `return writePreInputUsageError(stderr, msg)` and the (path-token, position,
+// exit-code) triple lives in exactly one place.
+func writePreInputUsageError(stderr io.Writer, msg string) int {
+	writePositionedError(stderr, preInputPathToken, 0, 0, msg)
+	return 2
 }
