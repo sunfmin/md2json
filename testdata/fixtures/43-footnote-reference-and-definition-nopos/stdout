@@ -1,0 +1,1 @@
+{"frontmatter":null,"ast":{"type":"root","children":[{"type":"paragraph","children":[{"type":"text","value":"text"},{"type":"footnoteReference","identifier":"a","label":"a"}]},{"type":"footnoteDefinition","identifier":"a","label":"a","children":[{"type":"paragraph","children":[{"type":"text","value":"footnote body"}]}]}]}}

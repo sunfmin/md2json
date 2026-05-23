@@ -1,0 +1,38 @@
+{
+  "frontmatter": null,
+  "ast": {
+    "type": "root",
+    "children": [
+      {
+        "type": "code",
+        "lang": null,
+        "meta": null,
+        "value": "abc\ndef\n",
+        "position": {
+          "start": {
+            "line": 1,
+            "column": 1,
+            "offset": 0
+          },
+          "end": {
+            "line": 3,
+            "column": 1,
+            "offset": 16
+          }
+        }
+      }
+    ],
+    "position": {
+      "start": {
+        "line": 1,
+        "column": 1,
+        "offset": 0
+      },
+      "end": {
+        "line": 3,
+        "column": 1,
+        "offset": 16
+      }
+    }
+  }
+}

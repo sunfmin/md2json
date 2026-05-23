@@ -1,0 +1,1 @@
+{"frontmatter":null,"ast":{"type":"root","children":[{"type":"paragraph","children":[{"type":"linkReference","identifier":"id","label":"id","referenceType":"full","children":[{"type":"text","value":"text"}]}]},{"type":"definition","identifier":"id","label":"id","url":"https://example.com","title":"t"}]}}

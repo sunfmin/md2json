@@ -1,0 +1,14 @@
+{
+  "frontmatter": null,
+  "ast": {
+    "type": "root",
+    "children": [
+      {
+        "type": "code",
+        "lang": null,
+        "meta": null,
+        "value": "abc\ndef\n"
+      }
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+{"frontmatter":null,"ast":{"type":"root","children":[{"type":"paragraph","children":[{"type":"imageReference","identifier":"id","label":"id","referenceType":"full","alt":"alt"}]},{"type":"definition","identifier":"id","label":"id","url":"https://example.com/x.png","title":"pic"}]}}

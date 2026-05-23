@@ -1,0 +1,26 @@
+{
+  "run_id": "2026-05-23-md2json2",
+  "idea_path": "/Users/sunfmin/Developments/md2json2/IDEA.md",
+  "product_dir": "/Users/sunfmin/Developments/md2json2",
+  "started_at": "2026-05-23T05:02:40Z",
+  "current_stage": "mini-arch",
+  "stage_context": {
+    "round": 0,
+    "transcript_path": null,
+    "redo_count": 0,
+    "issue_slug": "10a-pretty-print-and-property-test",
+    "scope": "mini"
+  },
+  "queue": {
+    "issues_total": 13,
+    "issues_done": 10,
+    "max_issues": 50,
+    "current_issue": "10a-pretty-print-and-property-test"
+  },
+  "last_verdict": null,
+  "rate_limit": {
+    "consecutive_limited_wakes": 0,
+    "last_hit_at": null
+  },
+  "run_status": "active"
+}
