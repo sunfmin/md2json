@@ -57,3 +57,12 @@
 {"t":"2026-05-23T10:12:35Z","ev":"stage-transition","from":"mini-arch","to":"tdd","issue":"10a-pretty-print-and-property-test"}
 {"t":"2026-05-23T10:27:44Z","ev":"agent-return","role":"proposer-tdd","stage":"tdd","verdict":"accept","issue":"10a-pretty-print-and-property-test"}
 {"t":"2026-05-23T10:29:19Z","ev":"stage-transition","from":"tdd","to":"mini-arch","issue":"10a-pretty-print-and-property-test"}
+{"t":"2026-05-23T11:11:16Z","ev":"halt-detected"}
+{"t":"2026-05-23T11:11:44Z","ev":"halt-detected"}
+{"t":"2026-05-23T11:14:25Z","ev":"halt-detected"}
+{"t":"2026-05-23T11:15:26Z","ev":"halt-detected"}
+{"t":"2026-05-23T11:18:50Z","ev":"halt-detected"}
+{"t":"2026-05-23T11:19:44Z","ev":"run-resume","run_id":"2026-05-23-md2json2","product_dir":"/Users/sunfmin/Developments/md2json2","session_id":"010ffe9d-47f8-45e1-b930-2da125a1c321"}
+{"t":"2026-05-23T11:19:44Z","ev":"halt-cleared-by-run","run_id":"2026-05-23-md2json2","product_dir":"/Users/sunfmin/Developments/md2json2"}
+{"t":"2026-05-23T11:26:32Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","verdict":"accept","issue":"10a-pretty-print-and-property-test","scope":"mini"}
+{"t":"2026-05-23T11:27:52Z","ev":"stage-transition","from":"mini-arch","to":"tdd","issue":"11-cli-flags-error-format-exit-codes"}

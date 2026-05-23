@@ -3,19 +3,20 @@
   "idea_path": "/Users/sunfmin/Developments/md2json2/IDEA.md",
   "product_dir": "/Users/sunfmin/Developments/md2json2",
   "started_at": "2026-05-23T05:02:40Z",
-  "current_stage": "mini-arch",
+  "current_stage": "tdd",
   "stage_context": {
-    "round": 0,
+    "round": "0",
     "transcript_path": null,
-    "redo_count": 0,
-    "issue_slug": "10a-pretty-print-and-property-test",
-    "scope": "mini"
+    "redo_count": "0",
+    "issue_slug": "11-cli-flags-error-format-exit-codes",
+    "scope": "mini",
+    "variants_written": "0"
   },
   "queue": {
     "issues_total": 13,
-    "issues_done": 10,
+    "issues_done": 11,
     "max_issues": 50,
-    "current_issue": "10a-pretty-print-and-property-test"
+    "current_issue": "11-cli-flags-error-format-exit-codes"
   },
   "last_verdict": null,
   "rate_limit": {
