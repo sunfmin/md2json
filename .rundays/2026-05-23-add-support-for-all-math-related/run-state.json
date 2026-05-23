@@ -8,15 +8,15 @@
     "round": 0,
     "transcript_path": null,
     "redo_count": 0,
-    "issue_slug": "06-in-block-composition"
+    "issue_slug": "07-mismatched-braces-and-value-preservation"
   },
   "queue": {
     "issues_total": 7,
-    "issues_done": 5,
+    "issues_done": 6,
     "max_issues": 50,
-    "current_issue": "06-in-block-composition"
+    "current_issue": "07-mismatched-braces-and-value-preservation"
   },
-  "last_verdict": "accept",
+  "last_verdict": null,
   "rate_limit": {
     "consecutive_limited_wakes": 0,
     "last_hit_at": null
