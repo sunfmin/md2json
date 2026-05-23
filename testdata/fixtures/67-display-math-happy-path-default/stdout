@@ -1,0 +1,1 @@
+{"frontmatter":null,"ast":{"type":"root","children":[{"type":"math","meta":null,"value":"\\frac{a}{b}\n","position":{"start":{"line":2,"column":1,"offset":3},"end":{"line":3,"column":1,"offset":15}}}],"position":{"start":{"line":1,"column":1,"offset":0},"end":{"line":4,"column":1,"offset":18}}}}

@@ -59,3 +59,5 @@
 {"t":"2026-05-23T15:58:38Z","ev":"cycle-commit","result":"committed","sha":"2eceea9","stage":"tdd","verdict":"accept"}
 {"t":"2026-05-23T16:01:04Z","ev":"agent-return","role":"proposer-arch","stage":"mini-arch","issue":"02-inline-math-happy-path","verdict":"accept","note":"no-strong-candidates"}
 {"t":"2026-05-23T16:01:07Z","ev":"queue-advance","prev":"02-inline-math-happy-path","next":"03-display-math-happy-path"}
+{"t":"2026-05-23T16:01:13Z","ev":"cycle-commit","result":"committed","sha":"8ea60c3","stage":"mini-arch","verdict":"accept"}
+{"t":"2026-05-23T16:09:59Z","ev":"agent-return","role":"proposer-tdd","stage":"tdd","issue":"03-display-math-happy-path","verdict":"accept"}

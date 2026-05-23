@@ -1135,3 +1135,68 @@ func TestTranslateHeadingPositionIncludesAtxMarkers(t *testing.T) {
 		t.Errorf("Position.Start: got %+v, want %+v (must include the `# ` marker, not start at the text content)", h.Position.Start, wantStart)
 	}
 }
+
+// S03 Go-layer anchor (issue 03 acceptance bullets #1 + #3): display math
+// `$$\n\frac{a}{b}\n$$\n` produces a single mdast `math{value, meta:nil}`
+// child whose `value` is the literal body bytes with the trailing `\n`
+// preserved and whose `meta` is `nil` (emit serializes nil `*string` as
+// JSON `null`). Anchors translate's `*mathjax.MathBlock` mapping at the
+// Go layer; the per-fixture byte-exact compare pins the wire side.
+//
+// Closing-fence-NOT-in-value invariant (cross-ref CONTEXT.md
+// "Text/Code value preservation" `code.value` analogy): the body
+// segment `Lines().Value(src)` covers only the interior body lines
+// because `probe/goldmark-mathjax/block.go:49-57` returns parser.Close
+// BEFORE appending the closing fence line; a future library upgrade
+// that changes this branch ordering would fail here with a precise
+// diagnostic.
+func TestTranslateDisplayMathHappyPath(t *testing.T) {
+	src := []byte("$$\n\\frac{a}{b}\n$$\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children length: got %d, want 1", len(root.Children))
+	}
+	m := root.Children[0]
+	if m.Type != "math" {
+		t.Fatalf("Type: got %q, want %q", m.Type, "math")
+	}
+	if m.Value != "\\frac{a}{b}\n" {
+		t.Errorf("Value: got %q, want %q (trailing newline preserved; closing fence NOT in value)", m.Value, "\\frac{a}{b}\n")
+	}
+	if m.Meta != nil {
+		t.Errorf("Meta: got *%q, want nil (CONTEXT.md `math node` entry: `meta` is always nil for `$$...$$` in v1.x; emit serializes nil *string as JSON null)", *m.Meta)
+	}
+	if len(m.Children) != 0 {
+		t.Errorf("Children: got %d, want 0 (math is a leaf — value/meta scalars only)", len(m.Children))
+	}
+}
+
+// S03 value-preservation anchor (issue 03 acceptance bullet #3): mhchem
+// source inside `$$...$$` rides through `value` byte-for-byte. md2json is
+// transport-only — no validation, no expansion, no normalization. Anchors
+// CONTEXT.md "Text/Code value preservation" + "Dollar-sign math
+// (transport-only)" at the Go layer for the display-math path.
+func TestTranslateDisplayMathPreservesMhchemValue(t *testing.T) {
+	src := []byte("$$\n\\ce{H2O}\n$$\n")
+	r, err := parse.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := Translate(r.Doc, src, Options{})
+
+	if len(root.Children) != 1 {
+		t.Fatalf("root.Children: got %d, want 1", len(root.Children))
+	}
+	m := root.Children[0]
+	if m.Type != "math" {
+		t.Fatalf("Type: got %q, want %q", m.Type, "math")
+	}
+	if m.Value != "\\ce{H2O}\n" {
+		t.Errorf("Value: got %q, want %q (mhchem source rides through byte-for-byte; transport-only posture)", m.Value, "\\ce{H2O}\n")
+	}
+}

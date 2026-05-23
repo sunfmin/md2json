@@ -329,8 +329,54 @@ func translateNode(n ast.Node, src []byte, pt *positionTracker) *Node {
 		return translateFootnoteLink(v, pt)
 	case *mathjax.InlineMath:
 		return translateInlineMath(v, src, pt)
+	case *mathjax.MathBlock:
+		return translateMath(v, src, pt)
 	default:
 		return nil
+	}
+}
+
+// translateMath maps `*mathjax.MathBlock` → mdast
+// `math{value, meta: null, position}` per ADR-0004 Decision 4 (1:1 name
+// alignment between goldmark-side `*mathjax.MathBlock` and mdast `math`).
+//
+// `value` is the literal interior bytes between the `$$` fences, with each
+// content line's trailing `\n` preserved including the final line's `\n`,
+// per CONTEXT.md "Text/Code value preservation" (`code.value` analogy) and
+// the `math node` entry. The library's block parser records one
+// `text.Segment` per body line in `Lines()`; `Lines().Value(src)`
+// concatenates them. Per `probe/goldmark-mathjax/block.go:45-65`, the
+// closing-fence branch returns parser.Close BEFORE appending the closing
+// fence line to `Lines()`, so the closing `$$` is NOT in `value` —
+// mirrors the `code.value` exclusion of the closing fence.
+//
+// `meta` is always `null` in v1.x (CONTEXT.md `math node` entry: "for
+// `$$...$$` it is always `null`"). The field exists in the mdast schema
+// as forward-compat for a deferred fenced-math Run (` ```math ... ``` `);
+// translate emits a non-pointer-but-flag pattern via leaving Node.Meta as
+// nil, which emit's `writeJSONNullableString` serializes as JSON `null`.
+//
+// Position spans the body's source range — `Lines().At(0).Start`
+// through `Lines().Last().Stop`. Mirrors `translateFencedCodeBlock`'s
+// use of `blockOffsets`: the body lines drive the span, and the
+// opening / closing fence lines lie outside it (CONTEXT.md "Position
+// info" treats fenced-block fences as out-of-span on the same precedent;
+// translate's fenced-code helper has shipped with this shape since S06).
+// For the unclosed-fence case (S05's scope, NOT S03's), the same
+// `blockOffsets` call naturally ends at the body's last LF since there
+// is no closer to include; S03's acceptance set is closed-fence-only,
+// so the issue's bullet #5 (position present by default, stripped under
+// `--no-position`) only requires shape-uniformity, not a specific
+// delimiter-inclusion choice.
+func translateMath(m *mathjax.MathBlock, src []byte, pt *positionTracker) *Node {
+	lines := m.Lines()
+	value := string(lines.Value(src))
+	startOff, endOff := blockOffsets(lines, src)
+	return &Node{
+		Type:         "math",
+		Value:        value,
+		ValuePresent: true,
+		Position:     pt.position(startOff, endOff),
 	}
 }
 

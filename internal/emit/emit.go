@@ -187,6 +187,22 @@ func writeNode(buf *bytes.Buffer, n *translate.Node, opts Options) {
 		// `data`, no `children`.
 		buf.WriteString(`,"value":`)
 		writeJSONString(buf, n.Value)
+	case "math":
+		// math is a leaf carrying `meta` and `value` (v1.x math Run;
+		// ADR-0004 Decision 4; CONTEXT.md `math node` entry). mdast key
+		// order: meta before value (mirrors the `code` case's
+		// `lang, meta, value` precedent — the nullable metadata fields
+		// land before the value-bearing field). The wire shape is
+		// `{type, meta, value, position}` — no `children`. Per CONTEXT.md
+		// `math node` ("for `$$...$$` it is always `null`") and S03
+		// acceptance criterion #2, `meta` is ALWAYS emitted as JSON
+		// `null` for v1.x (never elided, regardless of `--pretty`); the
+		// nil `*string` Meta on the Node serializes through
+		// writeJSONNullableString.
+		buf.WriteString(`,"meta":`)
+		writeJSONNullableString(buf, n.Meta)
+		buf.WriteString(`,"value":`)
+		writeJSONString(buf, n.Value)
 	case "html":
 		// html is a leaf carrying only `value`. Block and inline raw HTML
 		// both serialize through this case — mdast does not distinguish.
@@ -299,7 +315,7 @@ func writeNode(buf *bytes.Buffer, n *translate.Node, opts Options) {
 // tree.
 func isContainer(t string) bool {
 	switch t {
-	case "text", "inlineCode", "inlineMath", "code", "html", "image", "thematicBreak", "break",
+	case "text", "inlineCode", "inlineMath", "math", "code", "html", "image", "thematicBreak", "break",
 		"imageReference", "definition", "footnoteReference":
 		// imageReference is a leaf (alt is a flat string, same as image);
 		// definition has no children (it carries url/title scalar fields);
