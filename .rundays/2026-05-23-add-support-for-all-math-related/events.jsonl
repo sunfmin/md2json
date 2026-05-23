@@ -41,3 +41,5 @@
 {"t":"2026-05-23T15:32:04Z","ev":"orchestrator-direct-edit","file":"docs/adr/0004-math-extension-library.md","reason":"single-line-Decision3-staleness-fix","stage":"critique-prd","note":"skipped-proposer-spawn-for-1line"}
 {"t":"2026-05-23T15:32:07Z","ev":"cycle-commit","result":"committed","sha":"404792c","stage":"critique-prd","verdict":"continue"}
 {"t":"2026-05-23T15:33:25Z","ev":"agent-return","role":"critic","stage":"critique-prd","verdict":"accept","note":"round-6-stack-consistent"}
+{"t":"2026-05-23T15:33:28Z","ev":"cycle-commit","result":"committed","sha":"78f724c","stage":"critique-prd","verdict":"accept"}
+{"t":"2026-05-23T15:36:07Z","ev":"agent-return","role":"proposer-issues","stage":"to-issues","verdict":"accept","queue_total":"7"}
