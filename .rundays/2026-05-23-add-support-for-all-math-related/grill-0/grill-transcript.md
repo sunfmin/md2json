@@ -97,3 +97,87 @@ Deferred-but-on-the-radar (do **not** answer this Round unless your Q1–Q5 answ
 Using terms `inlineMath`, `math` (block/display), and `meta` (math info-string field) — not yet in `<product_dir>/CONTEXT.md` glossary. To be added under the **mdast node-set v1** enumeration as part of the PRD output of this Run (the `Deferred-but-on-the-radar` item "Updates to `mdast node-set v1` enumeration in CONTEXT.md — pending Q2" is now unblocked). Also note for the PRD author: ADR-0002's "Out of scope (post-v1)" line `Math ($...$, $$...$$) extensions. PRD non-goal.` is the explicit prior decision this Run reverses; the new ADR (sibling, ADR-0004 by numbering) must cross-reference and supersede that bullet.
 
 ### VERDICT: continue
+
+## Round 2
+
+### Interviewer
+
+Round 1 closed Q1/Q2/Q3/Q5. Q4 was bounded-delegated to me: library (not hand-rolled), wired via `parse.New`, sibling ADR to ADR-0002, preference order `go.abhg.dev/goldmark-mathjax` → `github.com/litao91/goldmark-mathjax`, escalate if no library implements the Q5(a) remark-math currency rule. Five questions below — one library-pick to ratify, four remaining ambiguities that affect the PRD output shape and must land **before** `to-prd` not at TDD time.
+
+**Q4 (resolved-by-Interviewer, awaiting PO ratification). Library pick: `github.com/litao91/goldmark-mathjax`.**
+
+Rationale (one paragraph, as bounded):
+
+Surveyed the four live candidates against the Q1(a) scope and the Q5(a) currency rule.
+
+- `go.abhg.dev/goldmark-mathjax` — does not exist. The `go.abhg.dev` namespace owns `frontmatter` (which we already use per ADR-0002), `anchor`, `toc`, `wikilink`, `mermaid`, `hashtag`, and a handful of others, but **not a math extension**. My Round-1 question listed this as a candidate on the assumption that the namespace's math sibling tracked its frontmatter sibling — it does not. PO's preference-order item (1) is therefore non-applicable, not unselected.
+- `github.com/litao91/goldmark-mathjax` — the de-facto goldmark math extension. Parses inline `$...$` and display `$$...$$` (the exact Q1(a) surface), exposes `ast.Math` + `ast.InlineMath` Go-native nodes (which `translate` will consume directly, ignoring its `Renderer` per the ADR-0002 "we ignore its HTML renderer entirely, same pattern as GFM/footnote" posture), and implements the **remark-math currency guard verbatim**: opening `$` must be followed by non-whitespace, closing `$` must be preceded by non-whitespace AND not followed by a digit, display `$$` has no guard. That is byte-identical to Q5(a). Wires through `parse.New` as a single extension value, no extra glue.
+- Hand-rolled — defeated on cost: PO's bounded delegation says "library, not hand-rolled" and the litao91 extension covers the scope at the rule level. No escalation triggered.
+- "None / post-process `text` nodes" — explicitly rejected in Round 1 Q4 as a layering violation.
+
+Trade-offs to surface (none of these change the pick, but the PRD/TDD must know):
+1. `litao91/goldmark-mathjax`'s last published tag is older than goldmark itself — the repo is maintenance-mode, not abandoned, but a Run-the-tests-before-shipping commitment is warranted (the upcoming `tdd` Stage already handles this).
+2. The extension's package layout exposes `ast.Math` (block) and `ast.InlineMath` (inline) — naming aligns with mdast's `math`/`inlineMath` 1:1, which makes the `translate` mapping a near-identity rename. Pleasant accident; not the reason for the pick.
+3. The extension does **not** support fenced ` ```math` (Q1(c), deferred). If a future Run un-defers (c), we revisit Q4 then; for now this gap is in-scope-of-deferral.
+
+**Q4 ask:** ratify `github.com/litao91/goldmark-mathjax` with the above rationale, or override with a different import path (and justify). Either way, recorded as a new product ADR (sibling to ADR-0002, numbered `0004` by sequence) by the PRD-stage author, cross-referencing ADR-0002's `Math (...) extensions. PRD non-goal.` line as the bullet this Run supersedes.
+
+---
+
+**Q6. `meta` field on the `math` node — what bytes are allowed there, and how do they get there under Q1(a)-only?**
+
+PO landed in Round 1 that `meta` is `null` for `$$...$$` blocks and stays in the schema as a future home for fenced ` ```math <meta>` info strings. Under the current Q1(a)-only scope, the `meta` field is therefore **always `null`** — no surface syntax in scope can populate it. Confirm one of:
+
+- (a) **`meta` is always `null` in v1.x math.** Document this explicitly in the PRD as a forward-compatibility field, not a live feature. TDD fixtures assert `meta === null` on every `math` node. A future fenced-math Run is the one that actually wires `meta`.
+- (b) **`meta` accepts an out-of-band annotation** even on `$$...$$` blocks via some yet-undecided source (e.g., goldmark attribute syntax `{#id .class}` after the closing fence). This adds scope and a parse path; I am flagging it only to reject unless PO surfaces a concrete need.
+
+Default ask: (a). Confirm (a) or argue (b).
+
+**Q7. Unclosed display math at EOF — hard error, silent drop, or fall-through to prose?**
+
+The litao91 extension's behavior under `$$\n\frac{a}{b}\n` (no closing `$$`, EOF) needs to be pinned at the wire-contract level, not deferred to "whatever the library does." Three options:
+
+- (a) **Fall-through to prose.** The unmatched `$$` and the body bytes are not recognized as a math block; they emit as ordinary `paragraph`/`text` nodes per CommonMark. This matches the **Frontmatter unclosed-fence rule** (CONTEXT.md `Frontmatter` entry) which says "no close, no block; parse as body content." Consistent posture.
+- (b) **Hard error.** Exit `1`, `md2json: <path>:<line>:<col>: unclosed display math` on stderr. Aggressive; surfaces the bug at parse time but breaks every blog post that has a stray `$$` in prose.
+- (c) **Silent drop** of the math block. Don't emit a `math` node, don't emit the body bytes either. Violates **Text/Code value preservation**'s "if goldmark emits a byte, it goes on the wire" — rejected on principle.
+- (d) **Best-effort `math{value: "<body>"}`** with no closing fence pretended. Pretends a `$$` we didn't see.
+
+Default ask: (a) fall-through to prose, mirroring the frontmatter rule. Confirm (a) or override. Mirror question applies to inline `$...$` with no closing `$` on the same line — the remark-math rule already handles this by "not matching as math" (it requires a closing `$` to fire), but PRD should state this explicitly.
+
+**Q8. Math inside other block constructs — lists, blockquotes, table cells, footnote definitions.**
+
+CommonMark/GFM allow block constructs to nest. The litao91 extension is registered as a block parser (for `$$`) and an inline parser (for `$...$`). Three composition cases need wire-contract clarity:
+
+- **Inline math inside a `tableCell`, `listItem` paragraph, `blockquote` paragraph, `footnoteDefinition`**: should emit `inlineMath` as a child of the containing paragraph, same as everywhere else. Standard inline-in-block composition. Confirm yes.
+- **Display `$$...$$` inside a `listItem` or `blockquote`**: does the extension recognize the `$$` open at a non-document-root indentation? `litao91`'s block parser is registered at standard block-priority; in practice this means `$$` works at the document root and at the start of a list item / blockquote line, but **not** with arbitrary indentation. Confirm we accept this — display math inside a deeply nested list is a corner case, and the fall-through (Q7a) means a non-matched `$$` becomes prose, which is the least-surprising outcome.
+- **Display `$$...$$` inside a `tableCell`**: GFM table cells are inline-content only — no block constructs inside cells. Therefore `$$...$$` inside a table cell **never** matches as display math; the `$$` bytes go on the wire as `text.value` (or, plausibly, the inline `$x$` matcher consumes part of it as inline math depending on the cell contents). Confirm we accept "no block math inside tables" as the rule and document it in the PRD.
+
+Default ask: confirm inline-in-block composition is uniform, accept the indentation/table-cell limits as natural consequences of block-vs-inline parsing, document in PRD. Override if PO wants a stronger guarantee (which would force hand-rolling).
+
+**Q9. Lossiness policy interaction — does the v1.x math Run change the silent-drop posture?**
+
+CONTEXT.md `Lossiness policy (goldmark → mdast)` says "any goldmark construct that does not map to a node in mdast node-set v1 is dropped silently." Under transport-only math (Q3a), the litao91 extension emits exactly two new goldmark node types (`ast.InlineMath`, `ast.Math`), both of which now have first-class mdast targets (`inlineMath`, `math`). Therefore:
+
+- **Claim:** the silent-drop set for math is **empty** — every math goldmark node has an mdast home, by construction of Q2(i) + Q3(a). No new dropped-constructs entry.
+- **Mirror claim:** the schema-extension count is +2 (`inlineMath`, `math`) plus one new optional field on `math` (`meta`); the new ADR (0004) names these explicitly so the PRD can reference them.
+
+Confirm both claims. Override only if PO sees a math goldmark construct I'm missing.
+
+**Q10. CommonMark fallback when the math extension is disabled — does v1.x ship a `--no-math` switch?**
+
+Round 1 Q4 deferred this to "a follow-on ADR." Pinning now because it affects the PRD's flag enumeration (CONTEXT.md `v1 flags` entry):
+
+- (a) **No runtime toggle in v1.x.** Math is always enabled once the Run ships; `parse.New` wires the extension unconditionally. Matches ADR-0002's "the v1 wire contract pins the enabled set; runtime toggling would change the output schema" posture from the "Out of scope (post-v1)" list. A user who wants to disable math runs an older binary.
+- (b) **`--no-math` flag** that drops `inlineMath`/`math` recognition for that invocation, falling back to CommonMark prose parsing for `$...$`/`$$...$$`. Adds a flag, adds a code path, adds a TDD axis (test math-on AND math-off).
+
+Default ask: (a), consistent with ADR-0002's negative. If PO picks (b), the new ADR-0004 must spell out the flag's interaction with `--frontmatter-only` and the empty-input acceptance criterion. Confirm (a) or argue (b).
+
+---
+
+If PO ratifies Q4 (or counter-picks) and lands Q6–Q10 as defaults, the load-bearing math vocabulary is closed. `to-prd` has: input dialect, node names + field semantics, transport-only renderer posture, currency rule, library pick + ADR scaffold, `meta`-always-null posture, EOF-unclosed fall-through, in-block composition rules, lossiness-empty claim, no-runtime-toggle posture. Anything PO declines to default on gets one more Round; everything else moves to PRD.
+
+### PO
+
+<left empty — next Cycle's PO fills>
+
+### VERDICT: continue

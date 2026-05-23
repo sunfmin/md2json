@@ -3,8 +3,8 @@
 _Load-bearing terms for the md2json CLI. Populated inline as the Interviewer/PO grill resolves each term. Format: bold term, one or two sentence definition, optional `_Avoid_:` line for confusable synonyms._
 
 **Markdown (input)**:
-The v1 accepted input dialect is **GitHub Flavored Markdown (GFM)** — CommonMark plus tables, task lists, strikethrough, and autolinks — with **YAML frontmatter** (delimited by leading `---` lines). Fenced code blocks (with info string) and footnotes are in scope; raw HTML is preserved verbatim as `html` nodes (not parsed into).
-_Avoid_: "Markdown" unqualified (ambiguous between CommonMark/GFM/MDX). Math (`$...$`, `$$...$$`), MDX, and TOML frontmatter are explicit v1 non-goals.
+The v1 accepted input dialect is **GitHub Flavored Markdown (GFM)** — CommonMark plus tables, task lists, strikethrough, and autolinks — with **YAML frontmatter** (delimited by leading `---` lines). Fenced code blocks (with info string) and footnotes are in scope; raw HTML is preserved verbatim as `html` nodes (not parsed into). The v1.x math Run extends this with Pandoc/CommonMark-extra dollar-sign math (inline `$...$`, display `$$...$$`); bracket form `\(...\)`/`\[...\]`, fenced ` ```math ```, AsciiMath, mhchem-as-separate-syntax, and raw `<math>` MathML remain non-goals.
+_Avoid_: "Markdown" unqualified (ambiguous between CommonMark/GFM/MDX). MDX and TOML frontmatter remain explicit v1 non-goals.
 
 **Frontmatter**:
 A YAML block at the top of the input file fenced by `---` on its own lines before any other content. Parsed and surfaced as a first-class top-level field on the JSON envelope, **not** as a node inside the AST. v1 supports YAML only. **Unclosed-fence rule**: a document that opens with `---` on line 1 but never closes the fence is *not* frontmatter — it parses as body-only with `frontmatter: null`, exit `0`. The closing `---` is mandatory to enter frontmatter mode.
@@ -44,6 +44,22 @@ Implemented in **Go**, parser **`github.com/yuin/goldmark`** (with its official 
 **v1 ship criterion**:
 Running `md2json < post.md` on a typical GFM blog post with YAML frontmatter prints, to stdout, a valid JSON document with a top-level `frontmatter` object and an `ast` field conforming to the documented mdast subset (see **mdast node-set v1**), exiting `0`. On empty input: `md2json --no-position < empty.md` prints exactly `{"frontmatter":null,"ast":{"type":"root","children":[]}}` and exits `0`; `md2json < empty.md` (default) prints the same envelope with a zero-width `position` field on the `root` (`{"start":{"line":1,"column":1,"offset":0},"end":{"line":1,"column":1,"offset":0}}`) and exits `0`. The single observable acceptance test for v1.
 
+**Dollar-sign math (transport-only)**:
+The v1.x math Run accepts Pandoc/CommonMark-extra dollar-sign math: inline `$...$` (with the **remark-math currency rule**, below) and display `$$...$$` on its own paragraph. md2json is a **transport** for math — it carries the source bytes to the wire under an `inlineMath`/`math` node's `value` field and **never** invokes a LaTeX→MathML/HTML/SVG renderer, never validates LaTeX, never expands macros, never balances braces. Mismatched braces, unknown macros, mhchem (`\ce{...}`), AMS environments (`align`, `gather`, `cases`), `\text{...}` islands, equation `\label`/`\ref` — all reduce to "bytes in `value`, downstream's problem." Preserves the **Wedge** (single static Go binary, no Node/Python runtime).
+_Avoid_: "math rendering," "LaTeX support" (md2json does neither).
+
+**remark-math currency rule**:
+The dollar-sign disambiguation rule used to decide whether `$...$` is inline math or prose-mentioning-money. **Inline:** opening `$` must be immediately followed by a **non-whitespace** character, the closing `$` must be immediately **preceded** by a non-whitespace character, AND the closing `$` must **not** be immediately followed by a digit. So `$5 and $10$` is *not* math (whitespace after opening `$`, digit after closing `$`); `$x = 5$` is. **Display `$$...$$` has no such guard.** This is the rule the `remark-math` ecosystem implements; chosen because `mdast node-set v1` is already remark-shaped (Q2 picked `inlineMath`/`math` verbatim), so the parse rule must match the node shape's ecosystem. The chosen goldmark math extension must implement this rule; if it does not, that is an extension-pick blocker, not a rule reopen.
+_Avoid_: "Pandoc rule" (close but edge-case-divergent), "strict `\$` opt-in" (breaks prose mentioning money).
+
+**`inlineMath` node**:
+mdast node type for inline dollar-sign math, `inlineMath{value, position}`. `value` is the literal source between the inline `$` delimiters, **byte-for-byte**, delimiters stripped — same rule as `code.value` / `inlineCode.value` (governed by **Text/Code value preservation**). No LaTeX-side normalization, no entity decoding, no whitespace trim, no macro expansion. Example: source `$x = 5$` produces `inlineMath{value: "x = 5"}`.
+_Avoid_: `mathInline`, single-`math`-node-with-`display`-discriminator (both fork the remark-math contract).
+
+**`math` node**:
+mdast node type for block/display dollar-sign math, `math{value, meta, position}`. `value` is the literal interior bytes between the `$$` fences (with each content line's trailing `\n` preserved, including the final line's — analogous to `code.value` for fenced code blocks). `meta` is the info-string after the opening fence for fenced math (e.g., a future ` ```math <meta> ` block); for `$$...$$` it is always `null`. The field stays in the schema so a future fenced-math Run has a home for the info string without a schema break. Example: source `$$\n\frac{a}{b}\n$$` produces `math{value: "\\frac{a}{b}\n", meta: null}`.
+_Avoid_: `blockMath`, `mathBlock`, `displayMath` (all break ecosystem compatibility).
+
 **mdast node-set v1**:
 The closed, enumerated set of mdast node types the v1 emitter is allowed to produce. This is the authoritative schema for TDD fixtures and downstream consumers:
 - `root`
@@ -63,6 +79,8 @@ The closed, enumerated set of mdast node types the v1 emitter is allowed to prod
 - `table{align}` + `tableRow` + `tableCell` — `align` is a per-column array on `table` of `"left"|"right"|"center"|null`; `tableCell` carries no `align` field (follow mdast, not goldmark per-cell)
 - `footnoteDefinition{identifier, label}`, `footnoteReference{identifier, label}`
 - `break` (hard line break — trailing two-space or `\`-escaped newline)
+- `inlineMath{value}` — inline dollar-sign math (v1.x math Run); transport-only, see **`inlineMath` node** entry
+- `math{value, meta}` — block/display dollar-sign math (v1.x math Run); transport-only, `meta` is `null` for `$$...$$`, see **`math` node** entry
 Frontmatter is **not** an mdast node; it is lifted into the envelope's `frontmatter` field before AST translation. Autolinks (bare URL or `<https://…>`) collapse to mdast `link{url, title:null}` with the URL as the child `text.value`; goldmark's distinct `AutoLink` type is an implementation detail not exposed on the wire.
 _Avoid_: "the goldmark node set" — goldmark's internal types are not the contract; treat this enumeration as the contract.
 
