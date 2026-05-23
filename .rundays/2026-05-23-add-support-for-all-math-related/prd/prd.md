@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 Created: 2026-05-23
-Last revised: 2026-05-23 (Round 2 critic remediation; verified against litao91 source)
+Last revised: 2026-05-23 (triggered-grill resolution applied — branch (c) translate-layer currency post-pass; ADR-0004 Decision 3 rewritten; fixture #3 + new divergence fixture #4a pinned against `probe/goldmark-mathjax/inline.go`)
 
 ## Problem
 
@@ -16,7 +16,7 @@ Extend the v1 pipeline so dollar-sign math source survives parse and lands on th
 
 1. As a blog-post author piping GFM through `md2json`, I want `$x = 5$` in my prose to land in the AST as `inlineMath{value: "x = 5"}` so my downstream renderer can typeset it.
 2. As the same author, I want `$$\frac{a}{b}$$` on its own paragraph to land as `math{value: "\\frac{a}{b}\n", meta: null}` so display equations render distinctly from inline math.
-3. As a writer mentioning money, I want "It costs $5 and they had $10" to remain ordinary prose — no spurious `inlineMath` node — because the **remark-math currency rule** rejects whitespace-after-opening-`$` and digit-after-closing-`$`. **(BLOCKED — see Open Questions §Currency rule fidelity.)**
+3. As a writer mentioning money, I want "It costs $5 and they had $10" to remain ordinary prose — no spurious `inlineMath` node — because the **remark-math currency rule** rejects whitespace-after-opening-`$` and digit-after-closing-`$`. The library's inline parser does NOT enforce these predicates (it matches by `$`-run-length equality only — see `probe/goldmark-mathjax/inline.go:24-52`); `translate` enforces the three predicates as a demote-only post-pass against each emitted `*ast.InlineMath`, converting predicate-rejected matches to `text` (per CONTEXT.md `remark-math currency rule` "translate-compensation responsibility" clause).
 4. As a downstream consumer already on the unified/remark ecosystem, I want the node names (`inlineMath`, `math`) and field shapes (`value`, `meta`) to match `remark-math` verbatim so my existing visitors work without a renaming pass.
 5. As a downstream renderer, I want `value` to be the literal source bytes between the delimiters — no entity decoding, no whitespace trim, no macro expansion — so I can pass them straight to KaTeX/MathJax which expect raw LaTeX.
 6. As a writer who forgets the closing `$$`, I want my document to still parse: the unclosed `$$` and the body bytes that follow emit as `paragraph`/`text` per CommonMark (the **unclosed-display-math fall-through rule**), exit `0`. No hard error, no dropped bytes, no phantom-fence math node.
@@ -32,27 +32,19 @@ Extend the v1 pipeline so dollar-sign math source survives parse and lands on th
 - `parse` — registers one additional goldmark extender (`github.com/litao91/goldmark-mathjax`, per ADR-0004) by appending it to the extension list inside `parse.New`. The frontmatter / GFM / footnote wiring is unchanged. The math extender exposes goldmark-native node types (`ast.InlineMath`, `ast.Math` under the litao91 package, per ADR-0004) which `parse` forwards verbatim — `parse` does NOT consume the extension's `Renderer` (md2json never emits HTML; same pattern GFM/footnote/frontmatter already use).
 - `translate` — adds two cases to its goldmark-AST→mdast switch: one for the math extension's inline node, mapping to `inlineMath{value, position}`; one for the math extension's block node, mapping to `math{value, meta: null, position}`. The `value` field carries the literal interior bytes per **Text/Code value preservation** (analogous to `code.value`); the `meta` field is always `null` in v1.x and stays in the schema as forward-compatibility for a deferred fenced-math Run (` ```math ... ``` `). `translate` additionally owns **two** library-behavior compensations:
   1. **Unclosed-`$$`-at-EOF compensation** (predicate pinned below in §Unclosed-fence behavior). The library emits a `MathBlock` regardless of whether the closing fence was seen (`MathBlock` carries no closed-state field — see `probe/goldmark-mathjax/block_node.go:5-13` and `block.go:67-69`). `translate` inspects the source bytes immediately after `MathBlock.Lines().Last().Stop` to decide closed-vs-unclosed; if unclosed, demote to a `paragraph` whose `text` children mirror what goldmark prose-paragraph parsing would have produced for the same source range (see fixture #5 for the exact shape).
-  2. **Currency rule compensation** — **OPEN: see §Open Questions §Currency rule fidelity below.** The current PRD shape assumes the chosen library implements the remark-math currency rule. Verified-against-source: it does not (see `probe/goldmark-mathjax/inline.go:38-52` — the inline parser scans for matching `$`-run length without consulting whitespace-after-opening, whitespace-before-closing, or digit-after-closing). Routing decision (translate post-pass demotion vs fork inline parser vs accept rule loss) is grill-blocking.
+  2. **Currency rule compensation — translate-layer demote-only post-pass.** After goldmark emits the AST and before the goldmark→mdast structural walk produces its final tree, `translate` walks the AST for every `*ast.InlineMath` node and re-applies the three remark-math currency predicates against the original source bytes:
+     - (i) **opener-followed-by-non-whitespace-non-`$`** — the byte at `inlineMath.opener-pos + 1` is neither whitespace nor `$`.
+     - (ii) **closer-preceded-by-non-whitespace** — the byte at `inlineMath.closer-pos - 1` is non-whitespace.
+     - (iii) **closer-not-followed-by-digit** — the byte at `inlineMath.closer-pos + 1` is either EOF or a non-digit.
+
+     On any predicate FAILURE, the post-pass demotes the entire `*ast.InlineMath` to an `*ast.Text` whose `Segment` spans the full original `$...$` range (opening `$`, interior bytes, closing `$` all included). The demoted node is then a plain text run; when `translateChildren` builds the paragraph's mdast children, the existing contiguous-text sibling-coalescing logic at `internal/translate/translate.go:225-231` merges the demoted text with adjacent `text` siblings on offset-contiguity, exactly the same way two ordinary `*ast.Text` siblings are merged. No new coalescing code introduced. Code surface: ~30 LoC inside `translate`.
+
+     The post-pass is **demote-only** — it never re-promotes, never re-scans the demoted bytes for a later valid inline-math match (the library has already greedy-consumed those bytes once; re-parsing inside the demoted range is not available without re-invoking goldmark). This is the load-bearing semantic difference vs. remark-math's recursive scan; the divergence is documented and fixture-pinned (see Testing Decisions fixture #4a).
 - `emit` — adds the two new node types to its `switch n.Type` writer. `inlineMath` serializes `{type, value, position}`; `math` serializes `{type, value, meta, position}` with `meta` always rendered as JSON `null` (never elided). `--no-position` continues to strip `position` uniformly; no per-node-type special-casing.
 
 **Extension library pick.** `github.com/litao91/goldmark-mathjax`, ratified Round 2 of grill-0, recorded in **ADR-0004** (sibling to ADR-0002). ADR-0004 supersedes ADR-0002's "Out of scope (post-v1)" bullet `Math ($...$, $$...$$) extensions. PRD non-goal.` and is the home for the goldmark-side implementation-detail names `ast.InlineMath` / `ast.Math` (which do **not** appear in `<product_dir>/CONTEXT.md` per PO direction). The math extender is appended to `parse.New`'s extension list — **`parse.New` is the single function by convention, with no central registry**, per ADR-0002 §"Negative (no central registry)". No new wiring style is introduced.
 
-**Currency disambiguation — verified-against-source, not library-implemented (CONTRADICTS grill A4/A5).** The litao91 inline parser at `probe/goldmark-mathjax/inline.go:38-52` matches inline math purely by `$`-run-length equality between opener and closer:
-```
-for i := 0; i < len(line); i++ {
-    c := line[i]
-    if c == '$' {
-        oldi := i
-        for ; i < len(line) && line[i] == '$'; i++ {
-        }
-        closure := i - oldi
-        if closure == opener && (i+1 >= len(line) || line[i+1] != '$') {
-            // ... close match
-        }
-    }
-}
-```
-There is no check for whitespace after the opener, no check for whitespace before the closer, no check for digit after the closer. Concrete consequence: input `It costs $5 and they had $10` parses (against litao91, verified by source trace) as `paragraph.children = [text{value:"It costs "}, inlineMath{value:"5 and they had "}, text{value:"10"}]` — exactly the failure mode grill A5 picked the remark-math rule to prevent. This invalidates ADR-0004 Decision 3's "byte-identically" claim and CONTEXT.md `remark-math currency rule`'s "extension-pick blocker, not a rule reopen" guard. Resolution path requires PO ratification — see §Open Questions §Currency rule fidelity below.
+**Currency disambiguation — translate-layer post-pass over the library's matching-`$`-run rule.** The litao91 inline parser at `probe/goldmark-mathjax/inline.go:24-52` matches inline math purely by `$`-run-length equality between opener and closer; there is NO whitespace-after-opener check, NO whitespace-before-closer check, NO digit-after-closer check. The **wire-contract currency rule** (CONTEXT.md `remark-math currency rule`) is therefore enforced one layer up: `translate` runs the demote-only currency post-pass (above, sub-point 2) over every `*ast.InlineMath` the library emits, demoting predicate-failing matches back to `text`. The library + post-pass combination delivers the CONTEXT.md `remark-math currency rule` wire output for user story 3 (`It costs $5 and they had $10` → ordinary prose), at the cost of one narrow divergence vs. pure remark-math on inputs whose library greedy-match consumes through a later remark-math-valid inline-math span (post-pass cannot re-scan the demoted range — see fixture #4a for the pinned divergence shape on input `$5 and $x$`). This is the resolution recorded in **ADR-0004 Decision 3**.
 
 **Unclosed-fence behavior.** Two mirrored rules:
 
@@ -89,13 +81,36 @@ External-behavior tests, not implementation-detail tests. Fixtures live alongsid
    `root.children = [math{value: "\\frac{a}{b}\n", meta: null}]`.
    Derivation: per `probe/goldmark-mathjax/block.go:25-43`, `Open` sees `$$` (i-pos=2 ≥ 2), creates `MathBlock`. `Continue` on `\frac{a}{b}\n` appends segment (lines 60-64). `Continue` on `$$\n`: scan `$`-run, length=2, `IsBlank(line[i:])` true → `Advance` then return `parser.Close` (lines 49-57). Lines() now holds just the `\frac{a}{b}\n` segment. `value` = literal bytes of that segment, trailing `\n` preserved per **Text/Code value preservation**'s `code.value` analogy. `meta` serializes as JSON `null` (not elided from the emitted object).
 
-3. **Currency rule — non-math prose. SPEC TBD; current library behavior pinned.** Input `It costs $5 and they had $10` against **raw litao91 output (no translate compensation)** produces:
-   `root.children = [paragraph.children = [text{value:"It costs "}, inlineMath{value:"5 and they had "}, text{value:"10"}]]`.
-   Derivation: per `inline.go:38-52`, the inline parser at `$` (pos 9) matches opener=1, scans forward, finds closing `$` at pos 25 (closure=1, line[26]='1' != '$' → passes the closer-not-followed-by-`$` branch), so the child segment covers `"5 and they had "`. **The library does not consult the currency rule.** The **target wire shape** (zero `inlineMath` under user story 3) requires either a translate-layer demotion post-pass, an inline-parser fork, or a CONTEXT vocabulary update. This fixture is **non-final** until §Open Questions §Currency rule fidelity is resolved by PO — see fixture-shape branches there. Listed here so the deferred decision has a fixture pin.
+3. **Currency rule — non-math prose (TDD-blocking; post-pass demote enforced).** Input `It costs $5 and they had $10` (28 bytes, no trailing newline) produces, on the **wire after translate's currency post-pass**:
+   `root.children = [paragraph.children = [text{value: "It costs $5 and they had $10"}]]`.
+   Derivation, step by step against `probe/goldmark-mathjax/inline.go:24-52` and `internal/translate/translate.go:225-231`:
+   - **Library inline parse.** Inline parser triggered at orig pos 9 (`$`). opener-loop counts run = 1 (`line[9]='$'`, `line[10]='5'` stops the run). `block.Advance(1)`. Scan forward in the line slice: at offset 15 inside the post-advance slice (orig pos 25, `$`), oldi=15, inner loop reaches offset 16 (orig pos 26, `1`), closure=1==opener, `line[i+1]='0' != '$'` (offset 17 in slice, orig pos 27) → match closes. Child segment covers orig pos 10..25, `value="5 and they had "`. `block.Advance(16)` past orig pos 26. Library emits, in paragraph-child order: `[text{value:"It costs "} @ pos 0..9, *ast.InlineMath{value:"5 and they had ", opener-pos:9, closer-pos:25} @ pos 9..26, text{value:"10"} @ pos 26..28]`.
+   - **Translate currency post-pass.** For the emitted `*ast.InlineMath`:
+     - Predicate (i) opener-followed-by-non-whitespace-non-`$`: `src[10]='5'` → PASS.
+     - Predicate (ii) closer-preceded-by-non-whitespace: `src[24]=' '` (space) → **FAIL**.
+     - Predicate (iii) closer-not-followed-by-digit: `src[26]='1'` → **FAIL**.
+     Predicate failure on (ii) and (iii); demote. The post-pass replaces the `*ast.InlineMath` with an `*ast.Text` whose `Segment` covers orig pos 9..26 (the full `$5 and they had $` range, opening and closing `$` included). Paragraph children pre-coalesce: `[*ast.Text@0..9, *ast.Text@9..26, *ast.Text@26..28]`.
+   - **Translate-children coalesce.** Per `internal/translate/translate.go:225-231`, contiguous-by-offset sibling `text` nodes merge. First merge: end-offset 9 == start-offset 9 → coalesce to `text{value:"It costs $5 and they had $", pos 0..26}`. Second merge: end-offset 26 == start-offset 26 → coalesce to `text{value:"It costs $5 and they had $10", pos 0..28}`.
+   - **Final wire shape**: one `paragraph` with one `text` child carrying the full original byte sequence. Zero `inlineMath` nodes. User story 3 satisfied.
 
 4. **Currency rule — adjacent valid math.** Input `Use $x$ and $y$.` produces:
    `root.children = [paragraph.children = [text{value: "Use "}, inlineMath{value: "x"}, text{value: " and "}, inlineMath{value: "y"}, text{value: "."}]]`.
-   Derivation: per `inline.go:38-52`, two independent inline-parser invocations (one at each `$` trigger). For `$x$`: opener=1, closer at pos 2 (line[3]=' ' != '$'), child segment = `x`. For `$y$`: opener=1, closer at pos 2 (line[3]='.' != '$'), child segment = `y`. Both fire regardless of which currency-rule resolution lands in §Open Questions — the openings/closings here all satisfy the conservative side of every option. Two distinct `inlineMath` nodes separated by `text` runs.
+   Derivation: per `inline.go:38-52`, two independent inline-parser invocations (one at each `$` trigger). For `$x$`: opener=1, closer at pos 2 (line[3]=' ' != '$'), child segment = `x`. For `$y$`: opener=1, closer at pos 2 (line[3]='.' != '$'), child segment = `y`. Post-pass predicates on each emitted `*ast.InlineMath`: opener followed by `x`/`y` (PASS), closer preceded by `x`/`y` (PASS), closer followed by ` ` / `.` (no digit, PASS). No demote. Two distinct `inlineMath` nodes survive on the wire, separated by `text` runs.
+
+4a. **Currency post-pass divergence fixture (`$5 and $x$`).** Input `$5 and $x$` (10 bytes, no trailing newline) produces, on the wire after translate's currency post-pass:
+   `root.children = [paragraph.children = [inlineMath{value: "5 and $x"}]]`.
+   Derivation, traced against `probe/goldmark-mathjax/inline.go:24-52`:
+   - **Library inline parse.** Trigger at orig pos 0 (`$`). opener-loop: `line[0]='$'`, `line[1]='5'` stops → opener=1. `block.Advance(1)`. Post-advance slice = `5 and $x$` (9 chars, orig pos 1..10). Scan i=0..8:
+     - i=6 `$`: oldi=6, inner-loop `line[6]='$'`, `line[7]='x'` stops → i=7, closure=1==opener. Closer-condition `(i+1=8 >= 9 || line[8] != '$')`: `line[8]='$'`, so `line[i+1] != '$'` is FALSE; 8 < 9. Whole condition FALSE — **first `$` at orig pos 7 does NOT close** (per the library's `line[i+1] != '$'` check at `inline.go:45`, which intentionally yields to a longer-run closer).
+     - i=7 `x`: skip.
+     - i=8 `$`: oldi=8, inner-loop `line[8]='$'`, i=9 hits `i<len(line)` boundary (len=9) → i=9, closure=1==opener. Closer-condition `(i+1=10 >= 9 || ...)` TRUE → close. Child segment: `segment.WithStop(segment.Start + 9 - 1)` = orig pos 1..9, `value="5 and $x"`. `block.Advance(9)`.
+   - Trim-halfspace check (`inline.go:62-82`): first char `src[1]='5'` (not space) → no trim. Library emits one `*ast.InlineMath{value:"5 and $x", opener-pos:0, closer-pos:9}` covering orig pos 0..10. Paragraph has no other children (library consumed the full input).
+   - **Translate currency post-pass.** Predicates on the emitted `*ast.InlineMath`:
+     - (i) opener-followed-by-non-whitespace-non-`$`: `src[1]='5'` → PASS.
+     - (ii) closer-preceded-by-non-whitespace: `src[8]='x'` → PASS.
+     - (iii) closer-not-followed-by-digit: orig pos 10 is EOF (no byte) → PASS.
+   - **No predicate failure → no demote.** Final wire shape: `[inlineMath{value:"5 and $x"}]`.
+   - **Divergence vs. pure remark-math, pinned.** Pure remark-math (which scans `$`-by-`$` looking for a valid opener+closer pair satisfying the three predicates) would, on this same input, find: opener at pos 0 + `5` (PASS opener-pred), candidate closer at pos 7 preceded by ` ` (FAIL closer-preceded-pred) → skip pos 7, next candidate closer at pos 9 preceded by `x` (PASS) and followed by EOF (PASS) → match `inlineMath{value:"5 and $x"}`. **For this specific input, pure remark-math and library+post-pass converge** on `[inlineMath{value:"5 and $x"}]`. The divergence between branch (c)'s demote-only post-pass and a hypothetical recursive-rescan implementation manifests on inputs where the library greedy-consumes through bytes that would have been a valid later remark-math match (e.g., a leading-whitespace opener like `$ 5 and $x$` — library matches and post-pass demotes the whole 11-byte span to one `text`, losing the inner `$x$`; recursive rescan would have found `$x$` as a separate match). PO's branch-(c) ratification accepts this as a narrow, fixture-pinned cost; this fixture pins the **no-divergence-on-this-input** trace so any future implementation change that produces a different shape (e.g., a library upgrade that adopts remark-math predicates, or a translate-layer recursive-rescan rewrite) makes this fixture fail explicitly.
 
 5. **Unclosed display math at EOF.** Input `$$\n\frac{a}{b}\n` (no closing `$$`, EOF after the body's `\n`) produces:
    `root.children = [paragraph.children = [text{value: "$$"}, text{value: "\\frac{a}{b}"}]]`.
@@ -157,35 +172,17 @@ External-behavior tests, not implementation-detail tests. Fixtures live alongsid
 - A `--no-math` runtime toggle (consistent with ADR-0002's runtime-extension-toggle posture; pinned in ADR-0004 Decision 6).
 - A goldmark attribute-syntax surface (e.g., `{#id .class}` on `$$` blocks) populating `meta` on display math. `meta` stays `null` in v1.x; a future fenced-math Run is what wires it.
 - Equation numbering UI / auto-numbering.
-- Hand-rolling the math parser. **Bounded-delegated to a library (`litao91/goldmark-mathjax`) per grill-0 Round 1 A4 and ADR-0004 Decision 1 — but see §Open Questions §Currency rule fidelity: that bounded delegation has an escalation precondition ("escalate if no library implements the Q5(a) remark-math currency rule") that has now been empirically tripped.**
+- Hand-rolling the math parser. Bounded-delegated to a library (`litao91/goldmark-mathjax`) per grill-0 Round 1 A4 and ADR-0004 Decision 1. The library's inline parser does NOT enforce the remark-math currency rule end-to-end (see ADR-0004 Decision 3); that rule is enforced one layer up by `translate`'s ~30-LoC demote-only currency post-pass, NOT by forking or hand-rolling the inline parser. Library identity stands.
 - TOML frontmatter, MDX, streaming parse (unchanged from ADR-0001 / ADR-0002).
-
-## Open Questions (grill-blocking)
-
-**Currency rule fidelity.** Grill-0 Round 1 A5 ratified the **remark-math currency rule** as load-bearing: "opening `$` must be immediately followed by a non-whitespace character, closing `$` immediately preceded by a non-whitespace character, AND closing `$` must not be immediately followed by a digit." Grill-0 Round 1 A4 PO bounded-delegated Q4 to Interviewer with the explicit escalation precondition: "If Interviewer's Round-2 survey turns up that no maintained library implements the Q5(a) rule faithfully, escalate back to me before defaulting to hand-rolled." Round 2 Interviewer ratified litao91 on the claim that it "implements the remark-math currency guard verbatim." That claim is **false against the actual library source**:
-
-> Per `probe/goldmark-mathjax/inline.go:38-52`, the inline parser matches by `$`-run-length equality only. There is no check for whitespace after the opener, no check for whitespace before the closer, no check for digit after the closer. Concrete trace: input `It costs $5 and they had $10` produces `inlineMath{value: "5 and they had "}` against litao91 — exactly the failure mode grill A5's rule was picked to prevent.
-
-The escalation precondition is met. Three PO-scope resolution paths:
-
-- **(a) Reopen ADR-0004 — switch to a faithful library, fork inline.go, or hand-roll.** No other published goldmark math extension implements the remark-math rule faithfully (Interviewer's Round-2 survey, re-verified). Fork option: the inline parser surface is ~50 LoC at `inline.go:24-84`; we add the three predicate checks (whitespace-after-opener, whitespace-before-closer, digit-after-closer) before the `closure == opener` branch fires, and vendor the forked parser inside `parse/internal/mathjax/`. Delivers byte-identical fidelity to remark-math. Cost: ~50 LoC vendored Go, ongoing maintenance, contradicts grill A4's "library, not hand-rolled" letter (but matches its escalation-precondition spirit).
-
-- **(b) Accept litao91's matching-`$`-run rule; rewrite CONTEXT.md.** Drop the currency rule from CONTEXT.md `remark-math currency rule` entry; replace with a "matching-`$`-run rule" definition. User story 3 becomes a known-loss: `$5 ... $10` garbles. Currency prose corpora regress. Loud loss; contradicts grill A5's "produces AST that looks compatible but disagrees on which spans are math — worst of both worlds" rejection of non-remark-math rules.
-
-- **(c) Translate-layer currency post-pass — demotion-only, partial fidelity.** `translate` walks each `*ast.InlineMath` and applies the three predicate checks against src bytes. On rejection, demote the matched range to `text` (which then coalesces with adjacent text per existing translate logic). Delivers correct output for user story 3's exact input (`$5 ... $10` becomes ordinary text). **Diverges from remark-math** in mixed prose-and-math cases that contain currency-rejected matches consuming bytes that remark-math would have skipped to find a later valid match. Concrete divergence: input `$5 and $x$` — remark-math produces `[text{value:"$5 and "}, inlineMath{value:"x"}]`; option (c) produces `[text{value:"$5 and $x$"}]` (the library's greedy first match consumes through the first valid closer; demotion converts the whole match to text; re-scanning inside the demoted range to find `$x$` is not available without re-parsing). Cost: ~30 LoC in translate. CONTEXT.md `remark-math currency rule` must soften from "byte-identical" to "approximate via demote-only post-pass; rare divergences documented" — a vocab update going through grill.
-
-  Recommendation if PO picks (c): document the divergence as a known-limit in CONTEXT.md and add a fixture pinning the `$5 and $x$` divergence so it does not silently regress.
-
-**This Run cannot proceed past `to-prd` until PO picks (a), (b), or (c).** The fixture set in §Testing Decisions is parametric on the pick — fixture #3 in particular has different target shapes per branch. `to-issues` cannot author tasks against an unresolved fixture #3.
 
 ## Notes
 
-- **ADR-0004** (`<product_dir>/docs/adr/0004-math-extension-library.md`, authored as a sibling output of this `to-prd` Stage): records `github.com/litao91/goldmark-mathjax` as the math extension library pick, wired exclusively through `parse.New`'s single-function-by-convention extension list, with translate-layer compensations for (1) the library's unclosed-`$$`-at-EOF behavior and (2) the open currency-rule routing. Decision 3 ("currency rule fidelity") is now flagged-pending PO resolution of §Open Questions §Currency rule fidelity; the ADR records the verified-against-source library behavior and the three resolution branches.
+- **ADR-0004** (`<product_dir>/docs/adr/0004-math-extension-library.md`, authored as a sibling output of this `to-prd` Stage): records `github.com/litao91/goldmark-mathjax` as the math extension library pick, wired exclusively through `parse.New`'s single-function-by-convention extension list, with translate-layer compensations for (1) the library's unclosed-`$$`-at-EOF behavior and (2) the **currency-rule demote-only post-pass** (Decision 3 — branch (c), ratified in the triggered-grill Round 1 A1).
 - **ADR-0002** — the math bullet on its "Out of scope (post-v1)" list is superseded by ADR-0004; the other bullets (runtime `--extensions` flag, MDX, TOML, streaming) remain in force. ADR-0002 §"Negative (no central registry)" continues to govern the wiring style for this Run's extension addition.
 - **ADR-0001** — input encoding / BOM / CRLF normalization rules apply uniformly to math content; `value` bytes are post-BOM-strip, post-LF-normalize per the existing rule.
 - **CONTEXT.md vocabulary** consumed by this PRD (most already pinned by Interviewer's grill-0 glossary updates):
   - `Dollar-sign math (transport-only)`
-  - `remark-math currency rule` — **NB: the "extension-pick blocker, not a rule reopen" guard in this entry is now in conflict with the verified library behavior; resolution depends on §Open Questions outcome.**
+  - `remark-math currency rule` — the entry's closing sentence has been updated (by the Interviewer prior to this PRD revision) to redirect the rule's enforcement from "extension-pick blocker" to "translate-compensation responsibility"; the three predicate checks themselves remain verbatim and still decide wire `inlineMath` membership.
   - `inlineMath` node
   - `math` node
   - `Unclosed-display-math fall-through rule`
@@ -201,4 +198,4 @@ The escalation precondition is met. Three PO-scope resolution paths:
 
 ## VERDICT pointer
 
-This PRD ends with `VERDICT: trigger-grill` (in the Proposer-PRD agent's final message, not in this artifact body). Reason: §Open Questions §Currency rule fidelity requires PO resolution before `to-issues` can author tasks.
+This PRD ends with `VERDICT: accept` (in the Proposer-PRD agent's final message, not in this artifact body). All grill-0 + triggered-grill open questions resolved; fixture set is fully spec'd against the verified library source.

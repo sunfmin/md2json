@@ -1,8 +1,8 @@
 # ADR-0004: math extension library and the dollar-sign math wire surface
 
-- Status: Accepted-pending-PO-resolution (Decision 3 flagged — see §Open subquestion below)
+- Status: Accepted
 - Date: 2026-05-23
-- Decider: PO (ratified in grill-0 Round 2 of the `add-support-for-all-math-related` Run; Decision 3 re-opened by critic-Round-2 source-verification findings)
+- Decider: PO (library identity ratified in grill-0 Round 2; Decision 3 currency-rule routing ratified in the triggered-grill Round 1 A1 of the `add-support-for-all-math-related` Run, branch (c) translate-layer demote-only post-pass)
 
 ## Context
 
@@ -22,19 +22,7 @@ The library source was cloned into `<product_dir>/.rundays/<run_id>/probe/goldma
 
 2. **Wiring style.** Per ADR-0002 §"Negative (no central registry)", the enabled extension set is a single function (`parse.New`) by convention. The math extender is appended to that function's extension list. No new wiring mechanism is introduced.
 
-3. **Currency rule fidelity — FLAGGED-PENDING-PO.** Grill-0 Round 2 ratified litao91 on the explicit claim that it "implements the remark-math rule byte-identically." **That claim is false against the verified library source.** Per `probe/goldmark-mathjax/inline.go:38-52`, the inline parser scans char-by-char for matching `$`-run length:
-   ```
-   if c == '$' {
-       oldi := i
-       for ; i < len(line) && line[i] == '$'; i++ {
-       }
-       closure := i - oldi
-       if closure == opener && (i+1 >= len(line) || line[i+1] != '$') {
-           // ... match closes
-       }
-   }
-   ```
-   There is no check for whitespace after the opener (the char at `block.Position()` after `Advance(opener)`), no check for whitespace before the closer (`src[segment.Start + i - closure - 1]`), no check for digit after the closer (`line[i]` after the closing run). Concrete trace: input `It costs $5 and they had $10` produces `inlineMath{value: "5 and they had "}` against litao91. Grill-0 Round 1 A4 PO bounded delegation contained an explicit escalation precondition ("If Interviewer's Round-2 survey turns up that no maintained library implements the Q5(a) rule faithfully, escalate back to me before defaulting to hand-rolled"); the precondition is met. This ADR pins the three resolution paths in the §Open subquestion below; PO resolves before `to-issues` can proceed. The "extension-pick blocker, not a rule reopen" guard in CONTEXT.md `remark-math currency rule` is in direct conflict with this finding — vocab update is part of the resolution.
+3. **Currency rule fidelity — translate-layer demote-only post-pass.** The library implements the **matching-`$`-run rule** (verified at `probe/goldmark-mathjax/inline.go:24-52` — the inline parser scans char-by-char for a closing `$`-run whose length equals the opening run and whose follower-char is not `$`; there is NO check for whitespace after the opener, NO check for whitespace before the closer, NO check for digit after the closer). The **wire-contract currency rule** (CONTEXT.md `remark-math currency rule` — opener-followed-by-non-whitespace, closer-preceded-by-non-whitespace, closer-not-followed-by-digit) is therefore enforced one layer up by `translate`: a demote-only post-pass walks each `*ast.InlineMath` the library emits, re-applies the three predicates against the original source bytes, and demotes predicate-failing matches to `*ast.Text` covering the full original `$...$` range. The demoted text then coalesces with adjacent `text` siblings via the existing sibling-coalescing logic at `internal/translate/translate.go:225-231` (offset-contiguity check, ~7-line tight loop). Code surface: ~30 LoC inside `translate`. Demote-only — the post-pass never re-promotes, never re-scans the demoted range for a later valid match (re-parsing inside the demoted range is not available without re-invoking goldmark). This routing was ratified by PO in the triggered-grill Round 1 A1 (branch (c)) as the most contained remediation: no library swap, no inline-parser fork, no CONTEXT.md rewrite of the three predicate checks. Trade: a narrow divergence from pure remark-math on inputs whose library greedy-match consumes through a later remark-math-valid inline-math span (the post-pass demotes the whole greedy match to text, losing the inner valid match); divergence is fixture-pinned in PRD Testing Decisions §fixture #4a (input `$5 and $x$`). The "extension-pick blocker, not a rule reopen" guard formerly in CONTEXT.md `remark-math currency rule` has been replaced (by the Interviewer prior to this Decision rewrite) with the "translate-compensation responsibility" clause — same load-bearing posture, different layer.
 
 4. **goldmark-side node names consumed by `translate`.** `*ast.InlineMath` → mdast `inlineMath{value, position}`. `*ast.Math` → mdast `math{value, meta: null, position}`. The 1:1 name alignment between the library's `ast.*` types and the mdast targets is a pleasant accident, not the basis of the pick. These implementation-detail names live in this ADR; they do not appear in CONTEXT.md (which speaks only the wire contract).
 
@@ -42,29 +30,21 @@ The library source was cloned into `<product_dir>/.rundays/<run_id>/probe/goldma
 
 6. **No runtime toggle.** Math is enabled unconditionally once this Run ships. The `v1 flags` enumeration in CONTEXT.md is unchanged (six flags). Consistent with ADR-0002's "Out of scope (post-v1)" stance on runtime extension toggles. A user who wants math-off runs a pre-this-Run binary.
 
-## Open subquestion (Decision 3 — grill-blocking)
-
-Three PO-scope resolution paths, each with a concrete fixture #3 target shape, a code surface, and a CONTEXT vocabulary delta:
-
-- **(a) Fork inline.go; vendor as `parse/internal/mathjax/`.** Surface: ~50 LoC. Add three predicate checks before the `closure == opener` branch at `inline.go:45`: (i) `src[startSegment.Start + opener]` is non-whitespace (opener-side rule), (ii) `src[segment.Start + i - closure - 1]` is non-whitespace (closer-preceded rule), (iii) `(i+1 >= len(line)) || !isDigit(line[i+1])` is true alongside the existing `line[i+1] != '$'` check (closer-not-followed-by-digit rule). On any predicate failure, the closer does NOT close; the scanner continues searching for the next valid closer. Delivers byte-identical fidelity to remark-math. Fixture #3 target shape: `paragraph.children = [text{value:"It costs $5 and they had $10"}]` (single text node, library never emits inlineMath for that input). CONTEXT.md unchanged. Cost: ~50 LoC vendored Go, ongoing maintenance against upstream litao91 drift. Contradicts grill A4's "library, not hand-rolled" letter, matches its escalation-precondition spirit.
-
-- **(b) Accept litao91's matching-`$`-run rule; rewrite CONTEXT.md `remark-math currency rule` entry.** Code: zero additional LoC. Vocab: replace `remark-math currency rule` with a new term (`matching-$-run rule` or similar) defining the actual library behavior; remove the `extension-pick blocker` guard. Fixture #3 target shape: `paragraph.children = [text{value:"It costs "}, inlineMath{value:"5 and they had "}, text{value:"10"}]`. Currency prose corpora regress loudly. Contradicts grill A5's "produces AST that looks compatible but disagrees on which spans are math — worst of both worlds" rejection of non-remark-math rules.
-
-- **(c) Translate-layer currency post-pass — demote-only.** `translate` walks each `*ast.InlineMath`, applies the three remark-math predicate checks against src bytes; on rejection, demote to `text` (subsequent contiguous-text coalescing per `internal/translate/translate.go:225-231` merges into surrounding text). Cost: ~30 LoC in translate. Delivers correct output for user story 3's exact input (`$5 ... $10` becomes ordinary text). **Diverges from remark-math** in mixed prose-and-math cases where the library's greedy first match consumes bytes containing a later valid math span; demotion converts the whole greedy match to text, and re-scanning inside the demoted range is not available without re-parsing. Concrete divergence: input `$5 and $x$` — remark-math produces `[text{value:"$5 and "}, inlineMath{value:"x"}]`; option (c) produces `[text{value:"$5 and $x$"}]`. Fixture #3 target shape: `paragraph.children = [text{value:"It costs $5 and they had $10"}]` (the demote-only post-pass converts the library's spurious match to text, which coalesces with surrounding text into a single text node — matches option (a)'s shape for THIS input, but differs on the `$5 and $x$` input). CONTEXT.md `remark-math currency rule` softens to "approximate via demote-only post-pass; rare divergences documented" plus an explicit fixture pinning the `$5 and $x$` divergence.
-
 ## Consequences
 
-- **Positive (ecosystem fidelity).** Node names (`inlineMath`, `math`), field names (`value`, `meta`) all match the unified/remark ecosystem byte-identically. Downstream consumers (KaTeX, MathJax, remark-math-aware visitors) work without a renaming or normalization pass. **Currency-rule fidelity is open per Decision 3.**
+- **Positive (ecosystem fidelity).** Node names (`inlineMath`, `math`), field names (`value`, `meta`) all match the unified/remark ecosystem byte-identically. Downstream consumers (KaTeX, MathJax, remark-math-aware visitors) work without a renaming or normalization pass. Currency-rule wire output also matches remark-math on all inputs except the narrow divergence pinned in PRD fixture #4a (see Decision 3).
 
-- **Positive (Wedge preserved).** Transport-only posture means no LaTeX renderer is linked in. The single static Go binary is unchanged; no Node/Python runtime is introduced. All three Decision-3 branches preserve Wedge.
+- **Positive (Wedge preserved).** Transport-only posture means no LaTeX renderer is linked in. The single static Go binary is unchanged; no Node/Python runtime is introduced.
 
 - **Positive (lossiness set unchanged).** The library emits exactly `*ast.InlineMath` and `*ast.Math` within this Run's scope; both have first-class mdast targets. CONTEXT.md `Lossiness policy (goldmark → mdast)` requires no new dropped-constructs entry.
 
 - **Negative (translate carries an unclosed-fence compensation with a src-byte predicate).** Per Decision 5, `translate` owns one library-behavior-specific branch. The predicate is deterministic (a single forward src-byte scan after `Lines().Last().Stop`, not heuristic) and is covered by an explicit TDD fixture (PRD fixture #5 for the wire contract, PRD fixture #14 for the library-behavior assertion). The cost is that a future library upgrade with different unclosed-`$$` behavior is a ADR-0004 reopen, not a silent regression.
 
-- **Negative (Decision 3 introduces translate carries a currency-rule compensation, OR a vendored inline parser fork, OR a CONTEXT vocab regression).** Open per §Open subquestion above.
+- **Negative (translate carries the currency-rule post-pass).** Per Decision 3, `translate` owns a ~30-LoC demote-only walk over each `*ast.InlineMath` that re-applies the three remark-math predicates. This is the second library-behavior-specific compensation in `translate` (alongside the unclosed-`$$` predicate in Decision 5); both are deterministic, source-byte-driven, and covered by explicit fixtures (PRD fixtures #3, #4a, #5). The post-pass is demote-only — a recursive-rescan or library-swap alternative would yield byte-identical remark-math fidelity at the cost of higher code surface and lost bounded-delegation posture (PO ratified the trade in the triggered-grill Round 1 A1).
 
-- **Negative (library maintenance mode).** `litao91/goldmark-mathjax`'s last published tag predates current goldmark. The repo is maintenance-mode, not abandoned. The consumed surface is small (two AST node types and their parsers); a future Run may fork that surface if upstream goes dark. Decision-3 option (a) effectively pre-emptively forks.
+- **Negative (one fixture-pinned divergence vs. pure remark-math).** The demote-only post-pass cannot recover a remark-math-valid inline-math span when the library has already greedy-consumed those bytes into a predicate-failing match. PRD fixture #4a pins the trace on input `$5 and $x$` (in this specific input, library + post-pass and pure remark-math converge by accident of the library's `line[i+1] != '$'` yield-to-longer-run check; divergence manifests on inputs where the library matches but predicates fail and a valid remark-math match would have been found inside the demoted range). A future Run may swap to recursive rescan if downstream consumers report regressions; until then the divergence is bounded and observable.
+
+- **Negative (library maintenance mode).** `litao91/goldmark-mathjax`'s last published tag predates current goldmark. The repo is maintenance-mode, not abandoned. The consumed surface is small (two AST node types and their parsers); a future Run may fork that surface if upstream goes dark.
 
 - **Negative (no fenced ` ```math `).** The library does not parse fenced math; that surface was deferred in grill-0 Round 1 (Q1c). When a future Run un-defers fenced math, this ADR is revisited.
 
@@ -72,7 +52,7 @@ Three PO-scope resolution paths, each with a concrete fixture #3 target shape, a
 
 - Supersedes ADR-0002 "Out of scope (post-v1)" bullet `Math ($...$, $$...$$) extensions. PRD non-goal.` Other ADR-0002 "Out of scope" bullets (runtime `--extensions` flag, MDX, TOML frontmatter, streaming parser) remain in force.
 - CONTEXT.md `Dollar-sign math (transport-only)` — pins transport-only posture this ADR implements.
-- CONTEXT.md `remark-math currency rule` — pins the rule Decision 3 now flags as library-violated. The CONTEXT entry's "extension-pick blocker, not a rule reopen" guard is in conflict with the verified library source and is part of the §Open subquestion resolution.
+- CONTEXT.md `remark-math currency rule` — pins the three predicate checks Decision 3's translate post-pass enforces. The entry's closing sentence has been updated (by the Interviewer prior to this Decision's rewrite) from "extension-pick blocker, not a rule reopen" to "translate-compensation responsibility" — same load-bearing posture, different layer.
 - CONTEXT.md `Unclosed-display-math fall-through rule` — pins the wire behavior Decision 5's translate compensation realizes; the rule's TDD-blocking-finding clause is the precedent for Decision 5's src-byte predicate.
 - CONTEXT.md `inlineMath` node and `math` node entries — pin the field semantics this ADR's `translate` mapping targets.
 - CONTEXT.md `mdast node-set v1` — already enumerates the two new node types.
