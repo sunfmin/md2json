@@ -8,15 +8,15 @@
     "round": 0,
     "transcript_path": null,
     "redo_count": 0,
-    "issue_slug": "01-wire-math-extension"
+    "issue_slug": "02-inline-math-happy-path"
   },
   "queue": {
     "issues_total": 7,
-    "issues_done": 0,
+    "issues_done": 1,
     "max_issues": 50,
-    "current_issue": "01-wire-math-extension"
+    "current_issue": "02-inline-math-happy-path"
   },
-  "last_verdict": "accept",
+  "last_verdict": null,
   "rate_limit": {
     "consecutive_limited_wakes": 0,
     "last_hit_at": null
