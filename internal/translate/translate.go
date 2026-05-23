@@ -60,7 +60,8 @@ func isASCIIDigit(b byte) bool {
 // appended. So we recover the delimiter positions by walking left from the
 // first child's `Segment.Start` across the leading `$` run and right from
 // the last child's `Segment.Stop` across the trailing `$` run. This is the
-// same recovery `translateInlineMath` uses to compute the position span.
+// same recovery `translateInlineMath` uses to compute the position span;
+// both call sites share `inlineMathDelimitedSpan` as the named seam.
 // For the (asymmetric) trim-halfspace case (`inline.go:62-82`) where one
 // side trimmed a space, the walk-leftward still lands on the opening `$`
 // run because the bytes immediately before the (post-trim) first child
@@ -105,7 +106,7 @@ func currencyPostPass(n ast.Node, src []byte) {
 		}
 	}
 	for _, im := range toDemote {
-		startOff, endOff := inlineMathSpan(im, src)
+		startOff, endOff := inlineMathDelimitedSpan(im, src)
 		repl := ast.NewTextSegment(textm.NewSegment(startOff, endOff))
 		n.ReplaceChild(n, im, repl)
 	}
@@ -115,7 +116,7 @@ func currencyPostPass(n ast.Node, src []byte) {
 // predicates pass for the given InlineMath node against the source bytes.
 // A return value of false means the node should be demoted to text.
 func currencyPredicatesPass(im *mathjax.InlineMath, src []byte) bool {
-	startOff, endOff := inlineMathSpan(im, src)
+	startOff, endOff := inlineMathDelimitedSpan(im, src)
 	// `endOff` is the offset PAST the closing `$` run, so the closer's last
 	// `$` byte is at endOff-1. The "byte immediately after the closer" is
 	// at endOff (or EOF).
@@ -136,18 +137,26 @@ func currencyPredicatesPass(im *mathjax.InlineMath, src []byte) bool {
 	return true
 }
 
-// inlineMathSpan returns the byte-offset range [startOff, endOff) in src
-// that the InlineMath's `$...$` match covers, INCLUDING the opening and
-// closing `$` delimiter runs. Derived by walking leftward across the
-// leading `$` run from the first child's segment start, and rightward
-// across the trailing `$` run from the last child's segment stop. Mirrors
-// the recovery `translateInlineMath` uses for position math.
+// inlineMathDelimitedSpan returns the byte-offset range [startOff, endOff)
+// in src that the InlineMath's `$...$` match covers, INCLUDING the opening
+// and closing `$` delimiter runs (hence "delimited" — the span encloses the
+// delimiters, it is not the interior-only span). Derived by walking leftward
+// across the leading `$` run from the first child's segment start, and
+// rightward across the trailing `$` run from the last child's segment stop.
+//
+// Two callers: `currencyPredicatesPass` needs the delimiter-byte positions
+// to apply the three remark-math currency-rule predicates (which inspect
+// `src[opener+1]`, `src[closer-1]`, `src[closer+1]`); `translateInlineMath`
+// needs the same range as the `position` field on the emitted mdast
+// `inlineMath` node (CONTEXT.md "Position info": a node's position spans
+// the source bytes that produced it, delimiters included). The two-adapter
+// rule justifies the seam.
 //
 // Returns (0, 0) for a degenerate InlineMath with no Text children — the
 // library never produces this (the inline parser only appends RawText
 // segments after a successful match), but the defensive return keeps the
 // caller's predicate logic well-typed.
-func inlineMathSpan(im *mathjax.InlineMath, src []byte) (start, end int) {
+func inlineMathDelimitedSpan(im *mathjax.InlineMath, src []byte) (start, end int) {
 	first := im.FirstChild()
 	last := im.LastChild()
 	if first == nil || last == nil {
@@ -571,7 +580,7 @@ func translateInlineMath(im *mathjax.InlineMath, src []byte, pt *positionTracker
 		seg := t.Segment
 		value += string(src[seg.Start:seg.Stop])
 	}
-	startOff, endOff := inlineMathSpan(im, src)
+	startOff, endOff := inlineMathDelimitedSpan(im, src)
 	return &Node{
 		Type:         "inlineMath",
 		Value:        value,
