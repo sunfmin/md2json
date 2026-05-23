@@ -90,3 +90,20 @@ Revision applied. Six defects addressed.
 4. **Fixture #11 derivation cites `inline.go:26-28` for the opener-count loop, but the actual opener-count for-statement is at `inline.go:27`.** Cosmetic; flagging because every other fixture cites line:line ranges that match the actual code precisely.
 
 ### VERDICT: continue
+
+## Round 5
+
+### Critic
+
+(Post-Round-4 mechanical fixes. Verified against PRD, ADR-0004, and `probe/goldmark-mathjax/inline.go`.)
+
+**Verified fixes:**
+- Defect 1 (byte count): fixed. PRD fixture #14 reads `(8 bytes; $$\nx\n$$\n)`. ✓
+- Defect 3 (ADR-0004 Decision 5 scope restriction): fixed. Decision 5 now carries explicit no-internal-blank scope restriction with cross-ref to PRD §Out of Scope. ✓
+- Defect 4 (fixture #11 line cite): fixed. Cites `inline.go:27`. ✓
+
+**Remaining defect:**
+
+1. **ADR-0004 Decision 3 carries stale divergence cross-ref to fixture #4a — Round-4 defect 2 only partially fixed.** Decision 3 body still ends: "divergence is fixture-pinned in PRD Testing Decisions §fixture #4a (input `$5 and $x$`)". PRD #4a now pins the CONVERGENCE trace; divergence is pinned in #4b (`$ 5 and $x$`). ADR-0004 Consequences section (lines 35, 45) was updated correctly in Round 4; Decision 3 body was not. Decision 3 contradicts its own Consequences — a future maintainer reading the canonical decision record follows a broken pointer. Load-bearing.
+
+### VERDICT: continue
